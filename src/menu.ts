@@ -1,5 +1,5 @@
 export class TableMenu {
-	static show(tableEl: HTMLTableElement, e: MouseEvent, actions: Array<{ text: string; action: () => void }>): void {
+	static show(tableEl: HTMLTableElement, e: MouseEvent, actions: Array<{ text: string; action: () => void; disabled?: boolean }>): void {
 		// Create a simple context menu
 		const menu = activeDocument.createElement('div');
 		menu.addClass('table-context-menu');
@@ -8,14 +8,25 @@ export class TableMenu {
 		menu.style.setProperty('--menu-y', `${e.clientY}px`);
 
 		actions.forEach(item => {
+			if (item.text === '---') {
+				// Add separator
+				menu.createEl('div', {
+					cls: 'table-context-menu-separator',
+				});
+				return;
+			}
+
 			const menuItem = menu.createEl('div', {
-				cls: 'table-context-menu-item',
+				cls: `table-context-menu-item${item.disabled ? ' disabled' : ''}`,
 				text: item.text,
 			});
-			menuItem.addEventListener('click', () => {
-				item.action();
-				menu.remove();
-			});
+			
+			if (!item.disabled) {
+				menuItem.addEventListener('click', () => {
+					item.action();
+					menu.remove();
+				});
+			}
 		});
 
 		activeDocument.body.appendChild(menu);
