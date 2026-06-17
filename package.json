@@ -1,6 +1,6 @@
 {
 	"name": "better-tables",
-	"version": "0.1.0-beta.1",
+	"version": "0.1.0-beta.2",
 	"description": "Enhanced table support for Obsidian with advanced features like table headers, cell merging, and more.",
 	"main": "main.js",
 	"type": "module",
