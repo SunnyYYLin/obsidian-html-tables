@@ -15,15 +15,20 @@ import {
 import { TableRenderer } from './renderer';
 import { TableStyler } from './styler';
 import { TableMenu } from './menu';
+import { getLocale, Locale } from './i18n';
 
 export default class BetterTablesPlugin extends Plugin {
 	settings!: BetterTablesSettings;
 	private renderer!: TableRenderer;
 	private selectedCells: HTMLElement[] = [];
 	private lastSelectedCell: HTMLElement | null = null;
+	private t!: Locale;
 
 	async onload() {
 		await this.loadSettings();
+
+		// Initialize i18n
+		this.t = getLocale();
 
 		// Initialize renderer with settings
 		this.renderer = new TableRenderer(settingsToConfig(this.settings));
@@ -157,18 +162,24 @@ export default class BetterTablesPlugin extends Plugin {
 	private addCellSelectionHandlers(tableEl: HTMLTableElement): void {
 		const cells = tableEl.querySelectorAll('td, th');
 		cells.forEach(cell => {
-			cell.addEventListener('click', (e: Event) => {
+			cell.addEventListener('mousedown', (e: Event) => {
 				const mouseEvent = e as MouseEvent;
+				
+				// Only handle left click for selection
+				if (mouseEvent.button !== 0) return;
+				
 				const cellEl = cell as HTMLElement;
 				
 				if (mouseEvent.shiftKey && this.lastSelectedCell) {
 					// Range selection with Shift+click
+					e.preventDefault();
 					this.selectCellRange(tableEl, this.lastSelectedCell, cellEl);
 				} else if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
 					// Toggle selection with Ctrl/Cmd+click
+					e.preventDefault();
 					this.toggleCellSelection(cellEl);
 				} else {
-					// Single selection
+					// Single selection - clear previous and select new
 					this.clearCellSelection(tableEl);
 					this.selectCell(cellEl);
 				}
@@ -245,30 +256,33 @@ export default class BetterTablesPlugin extends Plugin {
 	}
 
 	private addTableContextMenu(tableEl: HTMLTableElement): void {
-		tableEl.addEventListener('contextmenu', (e: MouseEvent) => {
-			e.preventDefault();
-			this.showTableMenu(tableEl, e);
-		});
+		tableEl.addEventListener('contextmenu', (e: Event) => {
+			const mouseEvent = e as MouseEvent;
+			mouseEvent.preventDefault();
+			mouseEvent.stopPropagation();
+			this.showTableMenu(tableEl, mouseEvent);
+		}, true); // Use capture phase to ensure we get the event first
 	}
 
 	private showTableMenu(tableEl: HTMLTableElement, e: MouseEvent): void {
+		const t = this.t;
 		const actions = [
 			{ 
-				text: 'Merge Cells', 
+				text: t.mergeCells, 
 				action: () => this.mergeSelectedCells(tableEl),
 				disabled: this.selectedCells.length < 2
 			},
 			{ 
-				text: 'Unmerge Cells', 
+				text: t.unmergeCells, 
 				action: () => this.unmergeCells(tableEl, e),
 			},
 			{ text: '---', action: () => {} },
-			{ text: 'Toggle Header Row', action: () => this.toggleHeaderRowFromTable(tableEl) },
-			{ text: 'Toggle Header Column', action: () => this.toggleHeaderColumnFromTable(tableEl) },
+			{ text: t.toggleHeaderRow, action: () => this.toggleHeaderRowFromTable(tableEl) },
+			{ text: t.toggleHeaderColumn, action: () => this.toggleHeaderColumnFromTable(tableEl) },
 			{ text: '---', action: () => {} },
-			{ text: 'Add Caption', action: () => this.addTableCaptionFromTable(tableEl) },
-			{ text: 'Auto-fit Columns', action: () => TableStyler.autoFitColumns(tableEl) },
-			{ text: 'Equal Column Width', action: () => TableStyler.equalizeColumns(tableEl) },
+			{ text: t.addCaption, action: () => this.addTableCaptionFromTable(tableEl) },
+			{ text: t.autoFitColumns, action: () => TableStyler.autoFitColumns(tableEl) },
+			{ text: t.equalColumnWidth, action: () => TableStyler.equalizeColumns(tableEl) },
 		];
 
 		TableMenu.show(tableEl, e, actions);
@@ -276,7 +290,7 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private mergeSelectedCells(tableEl: HTMLTableElement): void {
 		if (this.selectedCells.length < 2) {
-			new Notice('Select at least 2 cells to merge');
+			new Notice(this.t.selectAtLeast2Cells);
 			return;
 		}
 
@@ -330,7 +344,7 @@ export default class BetterTablesPlugin extends Plugin {
 		// Clear selection
 		this.clearCellSelection(tableEl);
 		
-		new Notice('Cells merged');
+		new Notice(this.t.cellsMerged);
 	}
 
 	private unmergeCells(tableEl: HTMLTableElement, e: MouseEvent): void {
@@ -339,7 +353,7 @@ export default class BetterTablesPlugin extends Plugin {
 		const cell = target.closest('td, th') as HTMLElement;
 		
 		if (!cell) {
-			new Notice('Click on a merged cell to unmerge');
+			new Notice(this.t.clickMergedCellToUnmerge);
 			return;
 		}
 
@@ -348,7 +362,7 @@ export default class BetterTablesPlugin extends Plugin {
 		const colSpan = parseInt(cell.getAttribute('colspan') || '1');
 
 		if (rowSpan === 1 && colSpan === 1) {
-			new Notice('Cell is not merged');
+			new Notice(this.t.cellNotMerged);
 			return;
 		}
 
@@ -375,7 +389,7 @@ export default class BetterTablesPlugin extends Plugin {
 			}
 		}
 
-		new Notice('Cells unmerged');
+		new Notice(this.t.cellsUnmerged);
 	}
 
 	private toggleHeaderRowFromTable(tableEl: HTMLTableElement): void {
@@ -395,7 +409,7 @@ export default class BetterTablesPlugin extends Plugin {
 			cell.replaceWith(newCell);
 		});
 
-		new Notice(isHeader ? 'Header row removed' : 'Header row added');
+		new Notice(isHeader ? this.t.headerRowRemoved : this.t.headerRowAdded);
 	}
 
 	private toggleHeaderColumnFromTable(tableEl: HTMLTableElement): void {
@@ -414,23 +428,23 @@ export default class BetterTablesPlugin extends Plugin {
 			firstCell.replaceWith(newCell);
 		});
 
-		new Notice('Header column toggled');
+		new Notice(this.t.headerColumnToggled);
 	}
 
 	private addTableCaptionFromTable(tableEl: HTMLTableElement): void {
 		// Check if caption already exists
 		const existingCaption = tableEl.querySelector('caption');
 		if (existingCaption) {
-			new Notice('Table already has a caption');
+			new Notice(this.t.tableAlreadyHasCaption);
 			return;
 		}
 
 		// Show modal for caption input
-		const modal = new CaptionModal(this.app, (caption) => {
+		const modal = new CaptionModal(this.app, this.t, (caption) => {
 			if (!caption) return;
 			const captionEl = tableEl.createEl('caption');
 			captionEl.textContent = caption;
-			new Notice('Caption added');
+			new Notice(this.t.captionAdded);
 		});
 		modal.open();
 	}
@@ -453,40 +467,36 @@ export default class BetterTablesPlugin extends Plugin {
 	}
 
 	private toggleHeaderRow(editor: Editor): void {
-		// This would need to find the table at cursor position
-		// For now, just show a notice
-		new Notice('Use right-click menu on table to toggle header row');
+		new Notice(this.t.useRightClickMenu);
 	}
 
 	private toggleHeaderColumn(editor: Editor): void {
-		// This would need to find the table at cursor position
-		// For now, just show a notice
-		new Notice('Use right-click menu on table to toggle header column');
+		new Notice(this.t.useRightClickMenu);
 	}
 
 	private addTableCaption(editor: Editor): void {
-		// This would need to find the table at cursor position
-		// For now, just show a notice
-		new Notice('Use right-click menu on table to add caption');
+		new Notice(this.t.useRightClickMenu);
 	}
 }
 
 class CaptionModal extends Modal {
 	private onSubmit: (caption: string) => void;
 	private input: HTMLInputElement | null = null;
+	private t: Locale;
 
-	constructor(app: App, onSubmit: (caption: string) => void) {
+	constructor(app: App, t: Locale, onSubmit: (caption: string) => void) {
 		super(app);
+		this.t = t;
 		this.onSubmit = onSubmit;
 	}
 
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl('h2', { text: 'Enter table caption' });
+		contentEl.createEl('h2', { text: this.t.enterTableCaption });
 
 		this.input = contentEl.createEl('input', {
 			type: 'text',
-			placeholder: 'Table caption',
+			placeholder: this.t.tableCaption,
 			cls: 'caption-input',
 		});
 
@@ -494,10 +504,10 @@ class CaptionModal extends Modal {
 			cls: 'caption-button-container',
 		});
 
-		const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
+		const cancelButton = buttonContainer.createEl('button', { text: this.t.cancel });
 		cancelButton.addEventListener('click', () => this.close());
 
-		const submitButton = buttonContainer.createEl('button', { text: 'Add caption' });
+		const submitButton = buttonContainer.createEl('button', { text: this.t.addCaptionButton });
 		submitButton.addClass('mod-cta');
 		submitButton.addEventListener('click', () => {
 			if (this.input) {

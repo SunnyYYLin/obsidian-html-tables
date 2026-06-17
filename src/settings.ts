@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import MyPlugin from './main';
 import { TableConfig } from './types';
+import { getLocale, Locale } from './i18n';
 
 export interface BetterTablesSettings {
 	enableAdvancedTables: boolean;
@@ -41,21 +42,23 @@ export function settingsToConfig(settings: BetterTablesSettings): TableConfig {
 
 export class BetterTablesSettingTab extends PluginSettingTab {
 	plugin: MyPlugin;
+	private t: Locale;
 
 	constructor(app: App, plugin: MyPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+		this.t = getLocale();
 	}
 
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName('Table features').setHeading();
+		new Setting(containerEl).setName(this.t.featuresHeading).setHeading();
 
 		new Setting(containerEl)
-			.setName('Enable advanced tables')
-			.setDesc('Enable advanced table features in preview mode')
+			.setName(this.t.enableAdvancedTables)
+			.setDesc(this.t.enableAdvancedTablesDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableAdvancedTables)
 				.onChange(async (value) => {
@@ -64,8 +67,8 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Enable header row')
-			.setDesc('Automatically format the first row as a header')
+			.setName(this.t.enableHeaderRow)
+			.setDesc(this.t.enableHeaderRowDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableHeaderRow)
 				.onChange(async (value) => {
@@ -74,8 +77,8 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Enable header column')
-			.setDesc('Automatically format the first column as a header')
+			.setName(this.t.enableHeaderColumn)
+			.setDesc(this.t.enableHeaderColumnDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableHeaderColumn)
 				.onChange(async (value) => {
@@ -84,8 +87,8 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Enable cell merging')
-			.setDesc('Allow merging cells in tables')
+			.setName(this.t.enableCellMerging)
+			.setDesc(this.t.enableCellMergingDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableCellMerging)
 				.onChange(async (value) => {
@@ -94,8 +97,8 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Enable formula support')
-			.setDesc('Support formulas in table cells (starting with =)')
+			.setName(this.t.enableFormula)
+			.setDesc(this.t.enableFormulaDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableFormula)
 				.onChange(async (value) => {
@@ -104,8 +107,8 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Enable newline in cells')
-			.setDesc('Support newlines in table cells using \\n')
+			.setName(this.t.enableNewline)
+			.setDesc(this.t.enableNewlineDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableNewline)
 				.onChange(async (value) => {
@@ -114,8 +117,8 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Enable table caption')
-			.setDesc('Support table captions above the table')
+			.setName(this.t.enableCaption)
+			.setDesc(this.t.enableCaptionDesc)
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.enableCaption)
 				.onChange(async (value) => {
@@ -124,12 +127,12 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Default horizontal alignment')
-			.setDesc('Default horizontal alignment for table cells')
+			.setName(this.t.defaultHorizontalAlignment)
+			.setDesc(this.t.defaultHorizontalAlignmentDesc)
 			.addDropdown(dropdown => dropdown
-				.addOption('left', 'Left')
-				.addOption('center', 'Center')
-				.addOption('right', 'Right')
+				.addOption('left', this.t.left)
+				.addOption('center', this.t.center)
+				.addOption('right', this.t.right)
 				.setValue(this.plugin.settings.defaultHorizontalAlignment)
 				.onChange(async (value) => {
 					this.plugin.settings.defaultHorizontalAlignment = value as 'left' | 'center' | 'right';
@@ -137,12 +140,12 @@ export class BetterTablesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Default vertical alignment')
-			.setDesc('Default vertical alignment for table cells')
+			.setName(this.t.defaultVerticalAlignment)
+			.setDesc(this.t.defaultVerticalAlignmentDesc)
 			.addDropdown(dropdown => dropdown
-				.addOption('top', 'Top')
-				.addOption('middle', 'Middle')
-				.addOption('bottom', 'Bottom')
+				.addOption('top', this.t.top)
+				.addOption('middle', this.t.middle)
+				.addOption('bottom', this.t.bottom)
 				.setValue(this.plugin.settings.defaultVerticalAlignment)
 				.onChange(async (value) => {
 					this.plugin.settings.defaultVerticalAlignment = value as 'top' | 'middle' | 'bottom';
