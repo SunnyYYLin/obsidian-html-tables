@@ -98,6 +98,28 @@
 	background-color: var(--background-primary);
 }
 
+.better-table .better-table-markdown-cell p {
+	margin: 0;
+}
+
+.better-table .better-table-markdown-cell pre {
+	margin: 0;
+	white-space: pre-wrap;
+}
+
+.better-table .better-table-markdown-cell code {
+	white-space: pre-wrap;
+}
+
+.better-table caption.better-table-caption-ready {
+	cursor: text;
+}
+
+.better-table caption.better-table-caption-editing {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
 /* Alignment classes */
 .align-left {
 	text-align: left;

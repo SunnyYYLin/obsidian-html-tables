@@ -7,6 +7,8 @@ import {
 	Modal,
 	MarkdownView,
 	setIcon,
+	MarkdownRenderer,
+	Component,
 } from 'obsidian';
 import {
 	BetterTablesSettings,
@@ -39,6 +41,7 @@ export default class BetterTablesPlugin extends Plugin {
 	private contextmenuHandler?: (e: MouseEvent) => void;
 	private conversionButtons = new WeakSet<HTMLTableElement>();
 	private htmlSourceEditGuards = new WeakSet<HTMLTableElement>();
+	private renderedCellComponents = new WeakMap<HTMLElement, Component>();
 
 	async onload() {
 		await this.loadSettings();
@@ -370,6 +373,7 @@ export default class BetterTablesPlugin extends Plugin {
 		this.enhancedTables.add(tableEl);
 		tableEl.addClass('better-table');
 		this.enhanceRenderedContent(tableEl);
+		this.addCaptionInteractionHandlers(tableEl);
 		this.addColumnResizeHandles(tableEl);
 		this.addTableWidthResizeHandle(tableEl);
 		this.addCellSelectionHandlers(tableEl);
@@ -386,6 +390,7 @@ export default class BetterTablesPlugin extends Plugin {
 		tableEl.addClass('better-table');
 
 		this.enhanceRenderedContent(tableEl);
+		this.addCaptionInteractionHandlers(tableEl);
 
 		// Add drag handles for column resizing
 		this.addColumnResizeHandles(tableEl);
@@ -398,6 +403,7 @@ export default class BetterTablesPlugin extends Plugin {
 		// Add caption support
 		if (this.settings.enableCaption) {
 			this.addCaptionSupport(tableEl, context);
+			this.addCaptionInteractionHandlers(tableEl);
 		}
 
 		tableEl.addEventListener('contextmenu', (e: MouseEvent) => {
@@ -750,9 +756,14 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private getTableEdgeHit(tableEl: HTMLTableElement, e: MouseEvent): 'top' | 'left' | null {
 		const rect = tableEl.getBoundingClientRect();
+		const firstRowRect = tableEl.querySelector('tr')?.getBoundingClientRect();
+		const tableBodyTop = firstRowRect?.top ?? rect.top;
 		const edgeSize = 8;
-		const onTopEdge = e.clientY >= rect.top && e.clientY <= rect.top + edgeSize;
-		const onLeftEdge = e.clientX >= rect.left && e.clientX <= rect.left + edgeSize;
+		const onTopEdge = e.clientY >= tableBodyTop && e.clientY <= tableBodyTop + edgeSize;
+		const onLeftEdge = e.clientX >= rect.left
+			&& e.clientX <= rect.left + edgeSize
+			&& e.clientY >= tableBodyTop
+			&& e.clientY <= rect.bottom;
 		if (onTopEdge) return 'top';
 		if (onLeftEdge) return 'left';
 		return null;
@@ -767,7 +778,9 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private editCellText(tableEl: HTMLTableElement, cellEl: HTMLElement): void {
 		if (cellEl.hasClass('better-table-cell-editing')) return;
-		const originalText = cellEl.textContent ?? '';
+		const originalText = cellEl.getAttribute('data-better-raw') ?? cellEl.textContent ?? '';
+		cellEl.empty();
+		cellEl.textContent = originalText;
 		cellEl.addClass('better-table-cell-editing');
 		cellEl.setAttribute('contenteditable', 'true');
 		cellEl.focus();
@@ -788,8 +801,10 @@ export default class BetterTablesPlugin extends Plugin {
 				cellEl.textContent = originalText;
 				return;
 			}
-			cellEl.removeAttribute('data-better-raw');
+			const nextText = cellEl.textContent ?? '';
+			cellEl.setAttribute('data-better-raw', nextText);
 			this.persistTableChanges(tableEl);
+			this.renderCellPreview(tableEl, cellEl);
 		};
 
 		const onBlur = () => finish(true);
@@ -805,6 +820,59 @@ export default class BetterTablesPlugin extends Plugin {
 
 		cellEl.addEventListener('blur', onBlur);
 		cellEl.addEventListener('keydown', onKeyDown);
+	}
+
+	private addCaptionInteractionHandlers(tableEl: HTMLTableElement): void {
+		const caption = tableEl.querySelector<HTMLElement>(':scope > caption');
+		if (!caption || caption.hasClass('better-table-caption-ready')) return;
+		caption.addClass('better-table-caption-ready');
+		caption.addEventListener('dblclick', (e: MouseEvent) => {
+			if (e.button !== 0) return;
+			e.preventDefault();
+			e.stopPropagation();
+			this.editCaptionText(tableEl, caption);
+		});
+	}
+
+	private editCaptionText(tableEl: HTMLTableElement, captionEl: HTMLElement): void {
+		if (captionEl.hasClass('better-table-caption-editing')) return;
+		const originalText = captionEl.textContent ?? '';
+		captionEl.addClass('better-table-caption-editing');
+		captionEl.setAttribute('contenteditable', 'true');
+		captionEl.focus();
+
+		const selection = activeWindow.getSelection();
+		const range = activeDocument.createRange();
+		range.selectNodeContents(captionEl);
+		range.collapse(false);
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+
+		const finish = (commit: boolean) => {
+			captionEl.removeEventListener('blur', onBlur);
+			captionEl.removeEventListener('keydown', onKeyDown);
+			captionEl.removeClass('better-table-caption-editing');
+			captionEl.removeAttribute('contenteditable');
+			if (!commit) {
+				captionEl.textContent = originalText;
+				return;
+			}
+			this.persistTableChanges(tableEl);
+		};
+
+		const onBlur = () => finish(true);
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Enter' && !event.shiftKey) {
+				event.preventDefault();
+				finish(true);
+			} else if (event.key === 'Escape') {
+				event.preventDefault();
+				finish(false);
+			}
+		};
+
+		captionEl.addEventListener('blur', onBlur);
+		captionEl.addEventListener('keydown', onKeyDown);
 	}
 
 	private getCellPosition(cellEl: HTMLElement): { row: number; col: number } | null {
@@ -860,25 +928,77 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private enhanceRenderedContent(tableEl: HTMLTableElement): void {
 		tableEl.querySelectorAll('td, th').forEach((cell) => {
-			const cellEl = cell as HTMLElement;
-			const raw = cellEl.getAttribute('data-better-raw') ?? cellEl.textContent ?? '';
-			if (this.settings.enableFormula && raw.trim().startsWith('=')) {
-				cellEl.setAttribute('data-better-raw', raw);
-				const result = this.evaluateFormula(raw);
-				cellEl.empty();
-				cellEl.textContent = result === null ? raw : result.toString();
-				cellEl.toggleClass('formula-result', result !== null);
-				cellEl.toggleClass('formula-error', result === null);
-				cellEl.addClass('formula-cell');
-			} else if (this.settings.enableNewline && raw.includes('\\n')) {
-				cellEl.setAttribute('data-better-raw', raw);
-				cellEl.empty();
-				raw.split('\\n').forEach((line, index) => {
-					if (index > 0) cellEl.createEl('br');
-					cellEl.appendText(line);
-				});
-			}
+			this.renderCellPreview(tableEl, cell as HTMLElement);
 		});
+	}
+
+	private renderCellPreview(tableEl: HTMLTableElement, cellEl: HTMLElement): void {
+		if (cellEl.hasClass('better-table-cell-editing')) return;
+		const raw = cellEl.getAttribute('data-better-raw') ?? cellEl.textContent ?? '';
+		const preservedChildren = Array.from(cellEl.children)
+			.filter(child => child.hasClass('column-resize-handle'));
+		this.unloadRenderedCell(cellEl);
+
+		cellEl.removeClass('formula-result');
+		cellEl.removeClass('formula-error');
+		cellEl.removeClass('formula-cell');
+
+		if (this.settings.enableFormula && raw.trim().startsWith('=')) {
+			cellEl.setAttribute('data-better-raw', raw);
+			const result = this.evaluateFormula(raw);
+			cellEl.empty();
+			cellEl.textContent = result === null ? raw : result.toString();
+			cellEl.toggleClass('formula-result', result !== null);
+			cellEl.toggleClass('formula-error', result === null);
+			cellEl.addClass('formula-cell');
+			preservedChildren.forEach(child => cellEl.appendChild(child));
+			return;
+		}
+
+		if (this.settings.enableNewline && raw.includes('\\n')) {
+			cellEl.setAttribute('data-better-raw', raw);
+			cellEl.empty();
+			raw.split('\\n').forEach((line, index) => {
+				if (index > 0) cellEl.createEl('br');
+				cellEl.appendText(line);
+			});
+			preservedChildren.forEach(child => cellEl.appendChild(child));
+			return;
+		}
+
+		if (this.shouldRenderMarkdownInCell(raw)) {
+			cellEl.setAttribute('data-better-raw', raw);
+			cellEl.empty();
+			const sourcePath = this.getTableSourcePath(tableEl);
+			const component = new Component();
+			this.addChild(component);
+			this.renderedCellComponents.set(cellEl, component);
+			void MarkdownRenderer.render(this.app, raw, cellEl, sourcePath, component)
+				.finally(() => {
+					preservedChildren.forEach(child => cellEl.appendChild(child));
+					cellEl.addClass('better-table-markdown-cell');
+				});
+		}
+	}
+
+	private unloadRenderedCell(cellEl: HTMLElement): void {
+		const component = this.renderedCellComponents.get(cellEl);
+		if (!component) return;
+		component.unload();
+		this.removeChild(component);
+		this.renderedCellComponents.delete(cellEl);
+	}
+
+	private shouldRenderMarkdownInCell(raw: string): boolean {
+		const text = raw.trim();
+		if (!text) return false;
+		return /(```|`[^`]+`|\$\$?[^$]+\$\$?|\\\(|\\\[|\*\*|__|\[[^\]]+\]\(|!\[[^\]]*\]\(|^#{1,6}\s|^\s*[-*+]\s)/m.test(text);
+	}
+
+	private getTableSourcePath(tableEl: HTMLTableElement): string {
+		const context = this.tableContexts.get(tableEl);
+		if (context) return context.sourcePath;
+		return this.app.workspace.getActiveFile()?.path ?? '';
 	}
 
 	private evaluateFormula(formula: string): number | null {
@@ -1058,6 +1178,7 @@ export default class BetterTablesPlugin extends Plugin {
 			if (range.kind === 'html' && tableEl) {
 				const captionEl = tableEl.createEl('caption');
 				captionEl.textContent = caption;
+				this.addCaptionInteractionHandlers(tableEl);
 				this.persistTableChanges(tableEl, editor);
 				new Notice(this.t.captionAdded);
 				return;
@@ -1311,6 +1432,7 @@ export default class BetterTablesPlugin extends Plugin {
 			if (!caption) return;
 			const captionEl = tableEl.createEl('caption');
 			captionEl.textContent = caption;
+			this.addCaptionInteractionHandlers(tableEl);
 			this.persistTableChanges(tableEl);
 			new Notice(this.t.captionAdded);
 		});
@@ -1503,6 +1625,7 @@ export default class BetterTablesPlugin extends Plugin {
 					const caption = text.substring(6).trim();
 					const captionEl = tableEl.createEl('caption');
 					captionEl.textContent = caption;
+					this.addCaptionInteractionHandlers(tableEl);
 					prevSibling.remove();
 				}
 			}
