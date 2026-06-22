@@ -301,6 +301,7 @@ export function replaceTableRangeInEditor(
 	const lines = editor.getValue().split('\n');
 	const anchor = editor.getCursor('anchor');
 	const head = editor.getCursor('head');
+	const scrollInfo = editor.getScrollInfo();
 	const from = { line: range.start, ch: 0 };
 	const to = { line: range.end, ch: lines[range.end]!.length };
 	const oldLineCount = range.end - range.start + 1;
@@ -310,7 +311,7 @@ export function replaceTableRangeInEditor(
 	const restoredAnchor = restorePosition(anchor, range, oldLineCount, newLineCount, maxLine);
 	const restoredHead = restorePosition(head, range, oldLineCount, newLineCount, maxLine);
 	editor.setSelection(restoredAnchor, restoredHead);
-	editor.scrollIntoView({ from: restoredHead, to: restoredHead }, false);
+	editor.scrollTo(scrollInfo.left, scrollInfo.top);
 	return true;
 }
 

@@ -104,7 +104,7 @@ export function markdownTableToString(table: TableData): string {
 	// Add header row
 	const firstRow = table.rows[0];
 	if (firstRow) {
-		lines.push('| ' + firstRow.join(' | ') + ' |');
+		lines.push(formatMarkdownTableRow(firstRow));
 	}
 
 	// Add separator row
@@ -115,7 +115,7 @@ export function markdownTableToString(table: TableData): string {
 			}
 			return '---';
 		});
-		lines.push('| ' + separator.join(' | ') + ' |');
+		lines.push(formatMarkdownTableRow(separator));
 	}
 
 	// Add data rows
@@ -123,9 +123,18 @@ export function markdownTableToString(table: TableData): string {
 	for (let i = startIndex; i < table.rows.length; i++) {
 		const row = table.rows[i];
 		if (row) {
-			lines.push('| ' + row.join(' | ') + ' |');
+			lines.push(formatMarkdownTableRow(row));
 		}
 	}
 
 	return lines.join('\n');
+}
+
+function formatMarkdownTableRow(row: string[]): string {
+	return `|${row.map(formatMarkdownTableCell).join('|')}|`;
+}
+
+function formatMarkdownTableCell(cell: string): string {
+	const trimmed = cell.trim();
+	return trimmed === '' ? '' : ` ${trimmed} `;
 }
