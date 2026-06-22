@@ -6,6 +6,8 @@ import {
 	App,
 	Modal,
 	MarkdownView,
+	Menu,
+	MenuItem,
 	setIcon,
 	MarkdownRenderer,
 	Component,
@@ -18,7 +20,7 @@ import {
 } from './settings';
 import { TableRenderer } from './renderer';
 import { TableStyler } from './styler';
-import { TableMenu } from './menu';
+import { TableMenu, TableMenuAction } from './menu';
 import { getLocale, Locale } from './i18n';
 import { serializeTableToHtml, parseHtmlToTableData, tableDataToHtml } from './html-serializer';
 import {
@@ -27,6 +29,10 @@ import {
 	findTableInSource, findTableNearEditorSelection, replaceTableRangeInEditor,
 } from './source-editor';
 import { markdownTableToString, parseMarkdownTable } from './parser';
+
+type MenuItemWithSubmenu = MenuItem & {
+	setSubmenu?: () => Menu;
+};
 
 export default class BetterTablesPlugin extends Plugin {
 	settings!: BetterTablesSettings;
@@ -82,22 +88,24 @@ export default class BetterTablesPlugin extends Plugin {
 				if (!sourceRange || sourceRange.kind !== 'html') return;
 
 				const t = this.t;
+				const canMerge = this.selectedCells.length >= 2;
+				const canUnmerge = this.getActionMergedCell(tableEl) !== null;
+				const canAlign = this.selectedCells.length > 0 || this.lastRightClickedCell !== null;
+				const canAddCaption = this.isWholeTableSelected(tableEl) && !tableEl.querySelector('caption');
+
 				menu.addSeparator();
-				menu.addItem((item) =>
-					item.setTitle(t.mergeCells)
-						.setDisabled(!tableEl || this.selectedCells.length < 2)
-						.onClick(() => {
-							if (tableEl) this.mergeSelectedCells(tableEl, editor);
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.unmergeCells)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.unmergeCells(tableEl, editor);
-						})
-				);
-				menu.addSeparator();
+				if (canMerge) {
+					menu.addItem((item) =>
+						item.setTitle(t.mergeCells)
+							.onClick(() => this.mergeSelectedCells(tableEl, editor))
+					);
+				}
+				if (canUnmerge) {
+					menu.addItem((item) =>
+						item.setTitle(t.unmergeCells)
+							.onClick(() => this.unmergeCells(tableEl, editor))
+					);
+				}
 				menu.addItem((item) =>
 					item.setTitle(t.toggleHeaderRow)
 						.onClick(() => this.toggleHeaderRowInSource(editor, tableEl ?? undefined))
@@ -109,74 +117,60 @@ export default class BetterTablesPlugin extends Plugin {
 							if (tableEl) this.toggleHeaderColumnInSource(editor, tableEl);
 						})
 				);
-				menu.addSeparator();
-				menu.addItem((item) =>
-					item.setTitle(t.addCaption)
-						.onClick(() => this.addCaptionInSource(editor, tableEl ?? undefined))
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.autoFitColumns)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (!tableEl) return;
-							if (!this.canPersistLiveTable(editor, tableEl)) return;
-							TableStyler.autoFitColumns(tableEl);
-							this.persistTableChanges(tableEl, editor);
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.equalColumnWidth)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (!tableEl) return;
-							if (!this.canPersistLiveTable(editor, tableEl)) return;
-							TableStyler.equalizeColumns(tableEl);
-							this.persistTableChanges(tableEl, editor);
-						})
-				);
-				menu.addSeparator();
-				menu.addItem((item) =>
-					item.setTitle(t.left)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.applyAlignment(tableEl, editor, 'horizontal', 'left');
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.center)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.applyAlignment(tableEl, editor, 'horizontal', 'center');
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.right)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.applyAlignment(tableEl, editor, 'horizontal', 'right');
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.top)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.applyAlignment(tableEl, editor, 'vertical', 'top');
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.middle)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.applyAlignment(tableEl, editor, 'vertical', 'middle');
-						})
-				);
-				menu.addItem((item) =>
-					item.setTitle(t.bottom)
-						.setDisabled(!tableEl)
-						.onClick(() => {
-							if (tableEl) this.applyAlignment(tableEl, editor, 'vertical', 'bottom');
-						})
-				);
+				if (canAddCaption) {
+					menu.addItem((item) =>
+						item.setTitle(t.addCaption)
+							.onClick(() => this.addCaptionInSource(editor, tableEl ?? undefined))
+					);
+				}
+
+				this.addSubmenu(menu, t.columnWidth, (submenu) => {
+					submenu.addItem((item) =>
+						item.setTitle(t.autoFitColumns)
+							.onClick(() => {
+								if (!this.canPersistLiveTable(editor, tableEl)) return;
+								TableStyler.autoFitColumns(tableEl);
+								this.persistTableChanges(tableEl, editor);
+							})
+					);
+					submenu.addItem((item) =>
+						item.setTitle(t.equalColumnWidth)
+							.onClick(() => {
+								if (!this.canPersistLiveTable(editor, tableEl)) return;
+								TableStyler.equalizeColumns(tableEl);
+								this.persistTableChanges(tableEl, editor);
+							})
+					);
+				});
+				if (canAlign) {
+					this.addSubmenu(menu, t.alignment, (submenu) => {
+						submenu.addItem((item) =>
+							item.setTitle(t.left)
+								.onClick(() => this.applyAlignment(tableEl, editor, 'horizontal', 'left'))
+						);
+						submenu.addItem((item) =>
+							item.setTitle(t.center)
+								.onClick(() => this.applyAlignment(tableEl, editor, 'horizontal', 'center'))
+						);
+						submenu.addItem((item) =>
+							item.setTitle(t.right)
+								.onClick(() => this.applyAlignment(tableEl, editor, 'horizontal', 'right'))
+						);
+						submenu.addSeparator();
+						submenu.addItem((item) =>
+							item.setTitle(t.top)
+								.onClick(() => this.applyAlignment(tableEl, editor, 'vertical', 'top'))
+						);
+						submenu.addItem((item) =>
+							item.setTitle(t.middle)
+								.onClick(() => this.applyAlignment(tableEl, editor, 'vertical', 'middle'))
+						);
+						submenu.addItem((item) =>
+							item.setTitle(t.bottom)
+								.onClick(() => this.applyAlignment(tableEl, editor, 'vertical', 'bottom'))
+						);
+					});
+				}
 			})
 		);
 
@@ -207,6 +201,18 @@ export default class BetterTablesPlugin extends Plugin {
 		if (this.contextmenuHandler) {
 			activeDocument.removeEventListener('contextmenu', this.contextmenuHandler, true);
 		}
+	}
+
+	private addSubmenu(menu: Menu, title: string, build: (submenu: Menu) => void): void {
+		menu.addItem((item) => {
+			item.setTitle(title);
+			const submenu = (item as MenuItemWithSubmenu).setSubmenu?.();
+			if (!submenu) {
+				item.setDisabled(true);
+				return;
+			}
+			build(submenu);
+		});
 	}
 
 	private registerConversionButtonObserver(): void {
@@ -1228,6 +1234,29 @@ export default class BetterTablesPlugin extends Plugin {
 		return true;
 	}
 
+	private getTableCells(tableEl: HTMLTableElement): HTMLElement[] {
+		return Array.from(tableEl.querySelectorAll<HTMLElement>('td, th'))
+			.filter(cell => !cell.hasClass('merged-cell-hidden'));
+	}
+
+	private isWholeTableSelected(tableEl: HTMLTableElement): boolean {
+		const cells = this.getTableCells(tableEl);
+		return cells.length > 0 && cells.every(cell => cell.hasClass('cell-selected'));
+	}
+
+	private getActionMergedCell(tableEl: HTMLTableElement): HTMLElement | null {
+		const candidates = [
+			this.lastRightClickedCell,
+			...this.selectedCells,
+		].filter((cell): cell is HTMLElement => cell !== null && cell.closest('table') === tableEl);
+
+		return candidates.find(cell => this.isMergedCell(cell)) ?? null;
+	}
+
+	private isMergedCell(cell: HTMLElement): boolean {
+		return cell.hasAttribute('rowspan') || cell.hasAttribute('colspan');
+	}
+
 	// --- Merge/Unmerge (DOM + source via Editor API) ---
 
 	private mergeSelectedCells(tableEl: HTMLTableElement, editor?: Editor): void {
@@ -1293,10 +1322,7 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private unmergeCells(tableEl: HTMLTableElement, editor?: Editor): void {
 		if (!this.canPersistLiveTable(editor, tableEl)) return;
-		// Find a merged cell in the table
-		const mergedCell = tableEl.querySelector<HTMLElement>(
-			'td[rowspan], td[colspan], th[rowspan], th[colspan]'
-		);
+		const mergedCell = this.getActionMergedCell(tableEl);
 
 		if (!mergedCell) {
 			new Notice(this.t.cellNotMerged);
@@ -1384,31 +1410,58 @@ export default class BetterTablesPlugin extends Plugin {
 		this.persistTableChanges(tableEl, editor);
 	}
 
-	private getReadingModeActions(tableEl: HTMLTableElement): Array<{ text: string; action: () => void; disabled?: boolean }> {
-		return [
-			{ text: this.t.mergeCells, action: () => this.mergeSelectedCells(tableEl), disabled: this.selectedCells.length < 2 },
-			{ text: this.t.unmergeCells, action: () => this.unmergeCells(tableEl) },
-			{ text: '---', action: () => undefined },
+	private getReadingModeActions(tableEl: HTMLTableElement): TableMenuAction[] {
+		const actions: TableMenuAction[] = [];
+		const canMerge = this.selectedCells.length >= 2;
+		const canUnmerge = this.getActionMergedCell(tableEl) !== null;
+		const canAlign = this.selectedCells.length > 0 || this.lastRightClickedCell !== null;
+		const canAddCaption = this.isWholeTableSelected(tableEl) && !tableEl.querySelector('caption');
+
+		if (canMerge) actions.push({ text: this.t.mergeCells, action: () => this.mergeSelectedCells(tableEl) });
+		if (canUnmerge) actions.push({ text: this.t.unmergeCells, action: () => this.unmergeCells(tableEl) });
+		if (actions.length > 0) actions.push({ text: '---', action: () => undefined });
+
+		actions.push(
 			{ text: this.t.toggleHeaderRow, action: () => this.toggleHeaderRowReading(tableEl) },
 			{ text: this.t.toggleHeaderColumn, action: () => this.toggleHeaderColumnReading(tableEl) },
-			{ text: this.t.addCaption, action: () => this.addCaptionReading(tableEl) },
+		);
+		if (canAddCaption) actions.push({ text: this.t.addCaption, action: () => this.addCaptionReading(tableEl) });
+
+		actions.push(
 			{ text: '---', action: () => undefined },
-			{ text: this.t.autoFitColumns, action: () => {
-				TableStyler.autoFitColumns(tableEl);
-				this.persistTableChanges(tableEl);
-			} },
-			{ text: this.t.equalColumnWidth, action: () => {
-				TableStyler.equalizeColumns(tableEl);
-				this.persistTableChanges(tableEl);
-			} },
-			{ text: '---', action: () => undefined },
-			{ text: this.t.left, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'left') },
-			{ text: this.t.center, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'center') },
-			{ text: this.t.right, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'right') },
-			{ text: this.t.top, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'top') },
-			{ text: this.t.middle, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'middle') },
-			{ text: this.t.bottom, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'bottom') },
-		];
+			{
+				text: this.t.columnWidth,
+				children: [
+					{ text: this.t.autoFitColumns, action: () => {
+						TableStyler.autoFitColumns(tableEl);
+						this.persistTableChanges(tableEl);
+					} },
+					{ text: this.t.equalColumnWidth, action: () => {
+						TableStyler.equalizeColumns(tableEl);
+						this.persistTableChanges(tableEl);
+					} },
+				],
+			},
+		);
+
+		if (canAlign) {
+			actions.push(
+				{
+					text: this.t.alignment,
+					children: [
+						{ text: this.t.left, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'left') },
+						{ text: this.t.center, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'center') },
+						{ text: this.t.right, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'right') },
+						{ text: '---', action: () => undefined },
+						{ text: this.t.top, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'top') },
+						{ text: this.t.middle, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'middle') },
+						{ text: this.t.bottom, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'bottom') },
+					],
+				},
+			);
+		}
+
+		return actions;
 	}
 
 	private toggleHeaderRowReading(tableEl: HTMLTableElement): void {

@@ -93,8 +93,7 @@
 .better-table td.better-table-cell-editing,
 .better-table th.better-table-cell-editing {
 	cursor: text;
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: -2px;
+	outline: none;
 	background-color: var(--background-primary);
 }
 
@@ -105,10 +104,12 @@
 .better-table .better-table-markdown-cell pre {
 	margin: 0;
 	white-space: pre-wrap;
+	font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
 }
 
 .better-table .better-table-markdown-cell code {
 	white-space: pre-wrap;
+	font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
 }
 
 .better-table caption.better-table-caption-ready {
@@ -190,6 +191,7 @@
 }
 
 .table-context-menu-item {
+	position: relative;
 	padding: 8px 12px;
 	cursor: pointer;
 	transition: background-color 0.2s;
@@ -207,6 +209,34 @@
 
 .table-context-menu-item.disabled:hover {
 	background-color: transparent;
+}
+
+.table-context-menu-item.has-submenu {
+	padding-right: 28px;
+}
+
+.table-context-menu-item.has-submenu::after {
+	content: "›";
+	position: absolute;
+	right: 10px;
+	color: var(--text-muted);
+}
+
+.table-context-submenu {
+	display: none;
+	position: absolute;
+	left: 100%;
+	top: -5px;
+	min-width: 180px;
+	padding: 4px 0;
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.table-context-menu-item.has-submenu:hover > .table-context-submenu {
+	display: block;
 }
 
 .table-context-menu-separator {
@@ -251,8 +281,7 @@
 /* Table editing */
 .better-table td:focus,
 .better-table th:focus {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: -2px;
+	outline: none;
 }
 
 /* Responsive table */

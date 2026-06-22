@@ -6,6 +6,8 @@ export interface Locale {
 	toggleHeaderRow: string;
 	toggleHeaderColumn: string;
 	addCaption: string;
+	columnWidth: string;
+	alignment: string;
 	autoFitColumns: string;
 	equalColumnWidth: string;
 	selectAtLeast2Cells: string;
@@ -62,6 +64,8 @@ export const locales: Record<string, Locale> = {
 		toggleHeaderRow: 'Toggle header row',
 		toggleHeaderColumn: 'Toggle header column',
 		addCaption: 'Add caption',
+		columnWidth: 'Column width',
+		alignment: 'Align',
 		autoFitColumns: 'Auto-fit columns',
 		equalColumnWidth: 'Equal column width',
 		selectAtLeast2Cells: 'Select at least 2 cells to merge',
@@ -116,6 +120,8 @@ export const locales: Record<string, Locale> = {
 		toggleHeaderRow: '切换标题行',
 		toggleHeaderColumn: '切换标题列',
 		addCaption: '添加表标题',
+		columnWidth: '列宽',
+		alignment: '对齐',
 		autoFitColumns: '自适应列宽',
 		equalColumnWidth: '均分列宽',
 		selectAtLeast2Cells: '请先选择至少 2 个单元格',
