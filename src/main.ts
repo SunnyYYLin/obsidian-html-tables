@@ -48,6 +48,7 @@ export default class BetterTablesPlugin extends Plugin {
 	private conversionButtons = new WeakSet<HTMLTableElement>();
 	private htmlSourceEditGuards = new WeakSet<HTMLTableElement>();
 	private renderedCellComponents = new WeakMap<HTMLElement, Component>();
+	private tableMenuDismissGuards = new WeakSet<HTMLTableElement>();
 
 	async onload() {
 		await this.loadSettings();
@@ -250,13 +251,14 @@ export default class BetterTablesPlugin extends Plugin {
 			}
 
 			container.addClass('better-table-convert-container');
+			this.installTableMenuDismissHandler(tableEl);
 			this.installFloatingConversionButton(tableEl);
 		});
 	}
 
 	private installFloatingConversionButton(tableEl: HTMLTableElement): void {
 		const button = activeDocument.body.createEl('button', {
-			cls: 'better-table-convert-button',
+			cls: 'better-table-convert-button mod-hidden',
 			attr: {
 				type: 'button',
 				'aria-label': 'Convert table between Markdown and HTML',
@@ -264,6 +266,18 @@ export default class BetterTablesPlugin extends Plugin {
 			},
 		});
 		setIcon(button, 'repeat-2');
+
+		let isHovering = false;
+		let hideTimer: number | null = null;
+		const setButtonActive = (active: boolean) => {
+			if (hideTimer !== null) {
+				window.clearTimeout(hideTimer);
+				hideTimer = null;
+			}
+			isHovering = active;
+			button.toggleClass('mod-active', active);
+			updatePosition();
+		};
 
 		const updatePosition = () => {
 			if (!tableEl.isConnected) {
@@ -275,7 +289,7 @@ export default class BetterTablesPlugin extends Plugin {
 				&& rect.top < activeWindow.innerHeight
 				&& rect.right > 0
 				&& rect.left < activeWindow.innerWidth;
-			button.toggleClass('mod-hidden', !isVisible);
+			button.toggleClass('mod-hidden', !isVisible || !isHovering);
 			if (!isVisible) return;
 			const left = Math.max(4, rect.left - 36);
 			const top = Math.max(4, rect.top + 2);
@@ -291,6 +305,16 @@ export default class BetterTablesPlugin extends Plugin {
 		activeWindow.addEventListener('scroll', onScrollOrResize, true);
 		activeWindow.addEventListener('resize', onScrollOrResize);
 
+		const showButton = () => setButtonActive(true);
+		const hideButton = () => {
+			if (hideTimer !== null) window.clearTimeout(hideTimer);
+			hideTimer = window.setTimeout(() => setButtonActive(false), 120);
+		};
+		tableEl.addEventListener('mouseenter', showButton);
+		tableEl.addEventListener('mouseleave', hideButton);
+		button.addEventListener('mouseenter', showButton);
+		button.addEventListener('mouseleave', hideButton);
+
 		button.addEventListener('mousedown', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
@@ -305,6 +329,11 @@ export default class BetterTablesPlugin extends Plugin {
 			resizeObserver.disconnect();
 			activeWindow.removeEventListener('scroll', onScrollOrResize, true);
 			activeWindow.removeEventListener('resize', onScrollOrResize);
+			tableEl.removeEventListener('mouseenter', showButton);
+			tableEl.removeEventListener('mouseleave', hideButton);
+			button.removeEventListener('mouseenter', showButton);
+			button.removeEventListener('mouseleave', hideButton);
+			if (hideTimer !== null) window.clearTimeout(hideTimer);
 			button.remove();
 		});
 	}
@@ -344,6 +373,21 @@ export default class BetterTablesPlugin extends Plugin {
 		tableEl.addEventListener('mousedown', stopLeftClick);
 		tableEl.addEventListener('click', stopLeftClick);
 		tableEl.addEventListener('dblclick', stopLeftClick);
+	}
+
+	private installTableMenuDismissHandler(tableEl: HTMLTableElement): void {
+		if (this.tableMenuDismissGuards.has(tableEl)) return;
+		this.tableMenuDismissGuards.add(tableEl);
+
+		const closeOnTablePointer = (e: MouseEvent | PointerEvent) => {
+			if (e.button !== 0) return;
+			const target = e.target;
+			if (target instanceof Node && activeDocument.querySelector('.table-context-menu')?.contains(target)) return;
+			TableMenu.closeAll();
+		};
+
+		tableEl.addEventListener('pointerdown', closeOnTablePointer, true);
+		tableEl.addEventListener('mousedown', closeOnTablePointer, true);
 	}
 
 	async loadSettings() {

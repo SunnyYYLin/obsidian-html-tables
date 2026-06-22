@@ -321,9 +321,18 @@
 	overflow: visible;
 }
 
+.cm-html-embed.better-table-convert-container {
+	padding: 0 !important;
+	margin-block: 0.25em !important;
+}
+
+.cm-html-embed.better-table-convert-container .better-table {
+	margin: 0;
+}
+
 .better-table-convert-button {
 	position: fixed;
-	z-index: 1000;
+	z-index: 20;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -334,7 +343,8 @@
 	background: var(--background-primary);
 	color: var(--text-muted);
 	padding: 0;
-	opacity: 0.72;
+	opacity: 0;
+	pointer-events: none;
 	transition: opacity 0.12s ease-in-out;
 }
 
@@ -343,7 +353,12 @@
 	height: 16px;
 }
 
-.better-table-convert-button:hover,
+.better-table-convert-button.mod-active {
+	opacity: 0.72;
+	pointer-events: auto;
+}
+
+.better-table-convert-button.mod-active:hover,
 .better-table-convert-button:focus {
 	opacity: 1;
 }

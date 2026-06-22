@@ -6,8 +6,12 @@ export interface TableMenuAction {
 }
 
 export class TableMenu {
-	static show(tableEl: HTMLTableElement, e: MouseEvent, actions: TableMenuAction[]): void {
+	static closeAll(): void {
 		activeDocument.querySelectorAll('.table-context-menu').forEach(menu => menu.remove());
+	}
+
+	static show(tableEl: HTMLTableElement, e: MouseEvent, actions: TableMenuAction[]): void {
+		this.closeAll();
 
 		// Create a simple context menu
 		const menu = activeDocument.createElement('div');

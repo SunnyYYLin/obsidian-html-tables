@@ -1,7 +1,7 @@
 {
 	"id": "better-tables",
 	"name": "Better Tables",
-	"version": "0.0.1-beta.14",
+	"version": "0.0.1-beta.15",
 	"minAppVersion": "1.8.7",
 	"description": "Enhanced table support for Obsidian with advanced features like table headers, cell merging, and more.",
 	"author": "SunnyYYLin",
