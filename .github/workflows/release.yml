@@ -40,9 +40,19 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   tag="${GITHUB_REF#refs/tags/}"
+                  tag_lower="${tag,,}"
+                  release_flags=()
+
+                  if [[ "$tag_lower" == *alpha* || "$tag_lower" == *beta* ]]; then
+                    release_flags+=(--prerelease)
+                  elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    release_flags+=()
+                  else
+                    release_flags+=(--draft)
+                  fi
 
                   gh release create "$tag" \
                     --title="$tag" \
-                    --draft \
+                    "${release_flags[@]}" \
                     --generate-notes \
                     main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
