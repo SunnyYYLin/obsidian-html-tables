@@ -1,4 +1,4 @@
-import { App, MarkdownPostProcessorContext, TFile, MarkdownView } from 'obsidian';
+import { App, MarkdownPostProcessorContext, TFile, MarkdownView, Editor } from 'obsidian';
 import { isHtmlInSection } from './html-serializer';
 
 export interface TableSourceInfo {
@@ -39,7 +39,7 @@ export function readTableSource(
 
 /**
  * Replace the source text of a table in the file via vault API.
- * Works in both reading mode and live preview.
+ * Works in reading mode where there is no active editor.
  */
 export async function replaceTableSource(
 	app: App,
@@ -77,7 +77,7 @@ export function isTableFromHtmlSource(
 }
 
 /**
- * Find the rendered table's position in the active file source by matching content.
+ * Find the rendered table's position in the source lines by matching content.
  * Returns line range {start, end} (0-based inclusive) or null.
  */
 export function findTableInSource(sourceLines: string[], tableEl: HTMLTableElement): { start: number; end: number } | null {
@@ -113,7 +113,57 @@ export function findTableInSource(sourceLines: string[], tableEl: HTMLTableEleme
 }
 
 /**
- * Replace a table in the active file source (for live preview mode, no context needed).
+ * Replace a table in the active file using the Editor API (for live preview).
+ * Uses editor.replaceRange() which properly triggers Obsidian's live preview re-render.
+ */
+export function replaceTableInEditor(
+	editor: Editor,
+	tableEl: HTMLTableElement,
+	newContent: string,
+): boolean {
+	const sourceText = editor.getValue();
+	const lines = sourceText.split('\n');
+	const range = findTableInSource(lines, tableEl);
+	if (!range) return false;
+
+	const from = { line: range.start, ch: 0 };
+	const to = { line: range.end, ch: lines[range.end]!.length };
+	editor.replaceRange(newContent, from, to);
+	return true;
+}
+
+/**
+ * Read table source from the editor (for live preview).
+ */
+export function readTableSourceFromEditor(
+	editor: Editor,
+	tableEl: HTMLTableElement,
+): string | null {
+	const sourceText = editor.getValue();
+	const lines = sourceText.split('\n');
+	const range = findTableInSource(lines, tableEl);
+	if (!range) return null;
+	return lines.slice(range.start, range.end + 1).join('\n');
+}
+
+/**
+ * Check if a table in the editor is HTML source (for live preview).
+ */
+export function isTableHtmlInEditor(
+	editor: Editor,
+	tableEl: HTMLTableElement,
+): boolean {
+	const sourceText = editor.getValue();
+	const lines = sourceText.split('\n');
+	const range = findTableInSource(lines, tableEl);
+	if (!range) return false;
+	return isHtmlInSection(lines[range.start]!);
+}
+
+// --- Legacy vault-based functions (kept for reading mode) ---
+
+/**
+ * Replace a table in the active file source via vault API (legacy, reading mode fallback).
  */
 export async function replaceTableInActiveFile(
 	app: App,
@@ -139,7 +189,7 @@ export async function replaceTableInActiveFile(
 }
 
 /**
- * Check if a table in the active file is HTML source (for live preview mode).
+ * Check if a table in the active file is HTML source via vault API (legacy).
  */
 export async function isTableHtmlInActiveFile(
 	app: App,
@@ -160,7 +210,7 @@ export async function isTableHtmlInActiveFile(
 }
 
 /**
- * Read table source from the active file (for live preview mode).
+ * Read table source from the active file via vault API (legacy).
  */
 export async function readTableSourceFromActiveFile(
 	app: App,

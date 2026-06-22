@@ -5,6 +5,7 @@ import {
 	Editor,
 	App,
 	Modal,
+	MarkdownView,
 } from 'obsidian';
 import {
 	BetterTablesSettings,
@@ -19,7 +20,8 @@ import { getLocale, Locale } from './i18n';
 import { serializeTableToHtml, parseHtmlToTableData } from './html-serializer';
 import {
 	replaceTableSource, readTableSource, isTableFromHtmlSource,
-	replaceTableInActiveFile, isTableHtmlInActiveFile, readTableSourceFromActiveFile,
+	replaceTableInEditor, readTableSourceFromEditor, isTableHtmlInEditor,
+	findTableInSource,
 } from './source-editor';
 import { markdownTableToString } from './parser';
 
@@ -72,25 +74,25 @@ export default class BetterTablesPlugin extends Plugin {
 				menu.addItem((item) =>
 					item.setTitle(t.mergeCells)
 						.setDisabled(this.selectedCells.length < 2)
-						.onClick(() => this.mergeSelectedCells(tableEl))
+						.onClick(() => this.mergeSelectedCells(tableEl, editor))
 				);
 				menu.addItem((item) =>
 					item.setTitle(t.unmergeCells)
-						.onClick(() => this.unmergeCells(tableEl))
+						.onClick(() => this.unmergeCells(tableEl, editor))
 				);
 				menu.addSeparator();
 				menu.addItem((item) =>
 					item.setTitle(t.toggleHeaderRow)
-						.onClick(() => this.toggleHeaderRowFromTable(tableEl))
+						.onClick(() => this.toggleHeaderRowInSource(editor, tableEl))
 				);
 				menu.addItem((item) =>
 					item.setTitle(t.toggleHeaderColumn)
-						.onClick(() => this.toggleHeaderColumnFromTable(tableEl))
+						.onClick(() => this.toggleHeaderColumnInSource(editor, tableEl))
 				);
 				menu.addSeparator();
 				menu.addItem((item) =>
 					item.setTitle(t.addCaption)
-						.onClick(() => this.addTableCaptionFromTable(tableEl))
+						.onClick(() => this.addCaptionInSource(editor, tableEl))
 				);
 				menu.addItem((item) =>
 					item.setTitle(t.autoFitColumns)
@@ -103,11 +105,11 @@ export default class BetterTablesPlugin extends Plugin {
 				menu.addSeparator();
 				menu.addItem((item) =>
 					item.setTitle(t.convertToHtml)
-						.onClick(() => this.convertTableToHtmlLive(tableEl))
+						.onClick(() => this.convertTableToHtmlLive(tableEl, editor))
 				);
 				menu.addItem((item) =>
 					item.setTitle(t.convertToMarkdown)
-						.onClick(() => this.convertTableToMarkdownLive(tableEl))
+						.onClick(() => this.convertTableToMarkdownLive(tableEl, editor))
 				);
 			})
 		);
@@ -228,7 +230,7 @@ export default class BetterTablesPlugin extends Plugin {
 
 			const onMouseMove = (e: MouseEvent) => {
 				if (!isResizing) return;
-				
+
 				const width = Math.max(50, startWidth + (e.clientX - startX));
 				TableStyler.setColumnWidth(tableEl, colIndex, width);
 			};
@@ -250,12 +252,12 @@ export default class BetterTablesPlugin extends Plugin {
 		cells.forEach(cell => {
 			cell.addEventListener('mousedown', (e: Event) => {
 				const mouseEvent = e as MouseEvent;
-				
+
 				// Only handle left click for selection
 				if (mouseEvent.button !== 0) return;
-				
+
 				const cellEl = cell as HTMLElement;
-				
+
 				if (mouseEvent.shiftKey && this.lastSelectedCell) {
 					// Range selection with Shift+click
 					e.preventDefault();
@@ -269,7 +271,7 @@ export default class BetterTablesPlugin extends Plugin {
 					this.clearCellSelection(tableEl);
 					this.selectCell(cellEl);
 				}
-				
+
 				this.lastSelectedCell = cellEl;
 			});
 		});
@@ -300,17 +302,17 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private selectCellRange(tableEl: HTMLTableElement, start: HTMLElement, end: HTMLElement): void {
 		this.clearCellSelection(tableEl);
-		
+
 		const startRect = this.getCellPosition(start);
 		const endRect = this.getCellPosition(end);
-		
+
 		if (!startRect || !endRect) return;
-		
+
 		const minRow = Math.min(startRect.row, endRect.row);
 		const maxRow = Math.max(startRect.row, endRect.row);
 		const minCol = Math.min(startRect.col, endRect.col);
 		const maxCol = Math.max(startRect.col, endRect.col);
-		
+
 		const rows = tableEl.querySelectorAll('tr');
 		for (let r = minRow; r <= maxRow; r++) {
 			const row = rows[r];
@@ -328,61 +330,133 @@ export default class BetterTablesPlugin extends Plugin {
 	private getCellPosition(cellEl: HTMLElement): { row: number; col: number } | null {
 		const row = cellEl.closest('tr');
 		if (!row) return null;
-		
+
 		const table = row.closest('table');
 		if (!table) return null;
-		
+
 		const rows = Array.from(table.querySelectorAll('tr'));
 		const rowIndex = rows.indexOf(row);
-		
+
 		const cells = Array.from(row.querySelectorAll('td, th'));
 		const colIndex = cells.indexOf(cellEl);
-		
+
 		return { row: rowIndex, col: colIndex };
 	}
 
-	private showTableMenu(tableEl: HTMLTableElement, e: MouseEvent): void {
-		const t = this.t;
-		const hasContext = this.tableContexts.has(tableEl);
+	// --- Source-level operations (modify the markdown source via Editor API) ---
 
-		const actions = [
-			{
-				text: t.mergeCells,
-				action: () => this.mergeSelectedCells(tableEl),
-				disabled: this.selectedCells.length < 2
-			},
-			{
-				text: t.unmergeCells,
-				action: () => this.unmergeCells(tableEl),
-			},
-			{ text: '---', action: () => {} },
-			{ text: t.toggleHeaderRow, action: () => this.toggleHeaderRowFromTable(tableEl) },
-			{ text: t.toggleHeaderColumn, action: () => this.toggleHeaderColumnFromTable(tableEl) },
-			{ text: '---', action: () => {} },
-			{ text: t.addCaption, action: () => this.addTableCaptionFromTable(tableEl) },
-			{ text: t.autoFitColumns, action: () => TableStyler.autoFitColumns(tableEl) },
-			{ text: t.equalColumnWidth, action: () => TableStyler.equalizeColumns(tableEl) },
-			{ text: '---', action: () => {} },
-		];
+	/**
+	 * Toggle the header row of a table by modifying the source.
+	 * In markdown, the header row is defined by the separator line (| --- | --- |).
+	 * If separator exists, remove it (header → data). If not, add it (data → header).
+	 */
+	private toggleHeaderRowInSource(editor: Editor, tableEl: HTMLTableElement): void {
+		const sourceText = editor.getValue();
+		const lines = sourceText.split('\n');
+		const range = findTableInSource(lines, tableEl);
+		if (!range) return;
 
-		if (hasContext) {
-			// Reading mode: check synchronously via context
-			const isHtml = this.isTableHtml(tableEl);
-			if (!isHtml) {
-				actions.push({ text: t.convertToHtml, action: () => this.convertTableToHtml(tableEl) });
-			} else {
-				actions.push({ text: t.convertToMarkdown, action: () => this.convertTableToMarkdown(tableEl) });
-			}
+		const secondLine = lines[range.start + 1]?.trim() ?? '';
+		const isSeparator = this.isMarkdownSeparator(secondLine);
+
+		if (isSeparator) {
+			// Remove separator line (header → data)
+			editor.replaceRange(
+				'',
+				{ line: range.start + 1, ch: 0 },
+				{ line: range.start + 2, ch: 0 }
+			);
+			new Notice(this.t.headerRowRemoved);
 		} else {
-			// Live preview: check asynchronously via file source
-			actions.push({ text: t.convertToHtml, action: () => this.convertTableToHtmlLive(tableEl) });
-			actions.push({ text: t.convertToMarkdown, action: () => this.convertTableToMarkdownLive(tableEl) });
+			// Add separator line (data → header)
+			const numCols = this.countTableColumns(lines, range.start);
+			const separator = '| ' + Array(numCols).fill('---').join(' | ') + ' |';
+			editor.replaceRange(
+				separator + '\n',
+				{ line: range.start + 1, ch: 0 },
+				{ line: range.start + 1, ch: 0 }
+			);
+			new Notice(this.t.headerRowAdded);
 		}
-
-		TableMenu.show(tableEl, e, actions);
 	}
 
-	private mergeSelectedCells(tableEl: HTMLTableElement): void {
+	/**
+	 * Toggle the header column of a table by modifying the source.
+	 * In markdown, there's no native header column. We use a visual marker in the source.
+	 * Actually, Obsidian doesn't have native header column support in markdown tables.
+	 * For now, this modifies the DOM only (visual change) and notifies the user.
+	 */
+	private toggleHeaderColumnInSource(editor: Editor, tableEl: HTMLTableElement): void {
+		// Markdown tables don't have a native header column concept.
+		// Toggle visually in the DOM.
+		const rows = tableEl.querySelectorAll('tr');
+		rows.forEach(row => {
+			const firstCell = row.querySelector('td, th');
+			if (!firstCell) return;
+
+			const isHeader = firstCell.tagName === 'TH';
+			const newCell = activeDocument.createElement(isHeader ? 'td' : 'th');
+			newCell.textContent = firstCell.textContent;
+			Array.from(firstCell.attributes).forEach(attr => {
+				newCell.setAttribute(attr.name, attr.value);
+			});
+			firstCell.replaceWith(newCell);
+		});
+
+		new Notice(this.t.headerColumnToggled);
+	}
+
+	/**
+	 * Add a caption before a table by inserting a line in the source.
+	 */
+	private addCaptionInSource(editor: Editor, tableEl: HTMLTableElement): void {
+		// Check if caption already exists
+		const existingCaption = tableEl.querySelector('caption');
+		if (existingCaption) {
+			new Notice(this.t.tableAlreadyHasCaption);
+			return;
+		}
+
+		const modal = new CaptionModal(this.app, this.t, (caption) => {
+			if (!caption) return;
+
+			const sourceText = editor.getValue();
+			const lines = sourceText.split('\n');
+			const range = findTableInSource(lines, tableEl);
+			if (!range) return;
+
+			// Insert caption line before the table
+			editor.replaceRange(
+				'Table: ' + caption + '\n',
+				{ line: range.start, ch: 0 },
+				{ line: range.start, ch: 0 }
+			);
+
+			new Notice(this.t.captionAdded);
+		});
+		modal.open();
+	}
+
+	/**
+	 * Check if a line is a markdown table separator (| --- | --- |).
+	 */
+	private isMarkdownSeparator(line: string): boolean {
+		if (!line.startsWith('|')) return false;
+		const cells = line.split('|').filter(c => c.trim() !== '');
+		return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c.trim()));
+	}
+
+	/**
+	 * Count the number of columns in a markdown table.
+	 */
+	private countTableColumns(lines: string[], tableStart: number): number {
+		const line = lines[tableStart]?.trim() ?? '';
+		return line.split('|').filter(c => c.trim() !== '').length;
+	}
+
+	// --- Merge/Unmerge (DOM + source via Editor API) ---
+
+	private mergeSelectedCells(tableEl: HTMLTableElement, editor?: Editor): void {
 		if (this.selectedCells.length < 2) {
 			new Notice(this.t.selectAtLeast2Cells);
 			return;
@@ -439,10 +513,10 @@ export default class BetterTablesPlugin extends Plugin {
 		this.clearCellSelection(tableEl);
 
 		new Notice(this.t.cellsMerged);
-		this.persistTableChanges(tableEl);
+		this.persistTableChanges(tableEl, editor);
 	}
 
-	private unmergeCells(tableEl: HTMLTableElement): void {
+	private unmergeCells(tableEl: HTMLTableElement, editor?: Editor): void {
 		// Find a merged cell in the table
 		const mergedCell = tableEl.querySelector(
 			'td[rowspan], td[colspan], th[rowspan], th[colspan]'
@@ -480,90 +554,43 @@ export default class BetterTablesPlugin extends Plugin {
 		}
 
 		new Notice(this.t.cellsUnmerged);
-		this.persistTableChanges(tableEl);
+		this.persistTableChanges(tableEl, editor);
 	}
 
-	private toggleHeaderRowFromTable(tableEl: HTMLTableElement): void {
-		const firstRow = tableEl.querySelector('tr');
-		if (!firstRow) return;
+	// --- Conversion (live preview, via Editor API) ---
 
-		const cells = firstRow.querySelectorAll('td, th');
-		const isHeader = cells[0]?.tagName === 'TH';
+	private convertTableToHtmlLive(tableEl: HTMLTableElement, editor: Editor): void {
+		const html = serializeTableToHtml(tableEl);
+		const success = replaceTableInEditor(editor, tableEl, html);
 
-		cells.forEach(cell => {
-			const newCell = activeDocument.createElement(isHeader ? 'td' : 'th');
-			newCell.textContent = cell.textContent;
-			// Copy attributes
-			Array.from(cell.attributes).forEach(attr => {
-				newCell.setAttribute(attr.name, attr.value);
-			});
-			cell.replaceWith(newCell);
-		});
-
-		new Notice(isHeader ? this.t.headerRowRemoved : this.t.headerRowAdded);
-		this.persistTableChanges(tableEl);
+		if (success) {
+			new Notice(this.t.tableConvertedToHtml);
+		} else {
+			new Notice('Failed to find table in source');
+		}
 	}
 
-	private toggleHeaderColumnFromTable(tableEl: HTMLTableElement): void {
-		const rows = tableEl.querySelectorAll('tr');
-		rows.forEach(row => {
-			const firstCell = row.querySelector('td, th');
-			if (!firstCell) return;
-
-			const isHeader = firstCell.tagName === 'TH';
-			const newCell = activeDocument.createElement(isHeader ? 'td' : 'th');
-			newCell.textContent = firstCell.textContent;
-			// Copy attributes
-			Array.from(firstCell.attributes).forEach(attr => {
-				newCell.setAttribute(attr.name, attr.value);
-			});
-			firstCell.replaceWith(newCell);
-		});
-
-		new Notice(this.t.headerColumnToggled);
-		this.persistTableChanges(tableEl);
-	}
-
-	private addTableCaptionFromTable(tableEl: HTMLTableElement): void {
-		// Check if caption already exists
-		const existingCaption = tableEl.querySelector('caption');
-		if (existingCaption) {
-			new Notice(this.t.tableAlreadyHasCaption);
+	private convertTableToMarkdownLive(tableEl: HTMLTableElement, editor: Editor): void {
+		const sourceHtml = readTableSourceFromEditor(editor, tableEl);
+		if (!sourceHtml) {
+			new Notice('Failed to find table in source');
 			return;
 		}
 
-		// Show modal for caption input
-		const modal = new CaptionModal(this.app, this.t, (caption) => {
-			if (!caption) return;
-			const captionEl = tableEl.createEl('caption');
-			captionEl.textContent = caption;
-			new Notice(this.t.captionAdded);
-			this.persistTableChanges(tableEl);
-		});
-		modal.open();
-	}
-
-	private addCaptionSupport(tableEl: HTMLTableElement, context: MarkdownPostProcessorContext): void {
-		// Check if there's a caption element before the table
-		const parent = tableEl.parentElement;
-		if (parent) {
-			const prevSibling = tableEl.previousElementSibling;
-			if (prevSibling && prevSibling.tagName === 'P') {
-				const text = prevSibling.textContent?.trim();
-				if (text && text.startsWith('Table:')) {
-					const caption = text.substring(6).trim();
-					const captionEl = tableEl.createEl('caption');
-					captionEl.textContent = caption;
-					prevSibling.remove();
-				}
-			}
+		const tableData = parseHtmlToTableData(sourceHtml);
+		if (!tableData) {
+			new Notice('Failed to parse table');
+			return;
 		}
-	}
 
-	private isTableHtml(tableEl: HTMLTableElement): boolean {
-		const context = this.tableContexts.get(tableEl);
-		if (!context) return false;
-		return isTableFromHtmlSource(context, tableEl);
+		const markdown = markdownTableToString(tableData);
+		const success = replaceTableInEditor(editor, tableEl, markdown);
+
+		if (success) {
+			new Notice(this.t.tableConvertedToMarkdown);
+		} else {
+			new Notice('Failed to replace table in source');
+		}
 	}
 
 	// --- Reading mode (with context) ---
@@ -598,35 +625,9 @@ export default class BetterTablesPlugin extends Plugin {
 		}
 	}
 
-	// --- Live preview (no context, use file API) ---
+	// --- Persistence ---
 
-	private async convertTableToHtmlLive(tableEl: HTMLTableElement): Promise<void> {
-		const html = serializeTableToHtml(tableEl);
-		const success = await replaceTableInActiveFile(this.app, tableEl, html);
-
-		if (success) {
-			new Notice(this.t.tableConvertedToHtml);
-		}
-	}
-
-	private async convertTableToMarkdownLive(tableEl: HTMLTableElement): Promise<void> {
-		const sourceHtml = await readTableSourceFromActiveFile(this.app, tableEl);
-		if (!sourceHtml) return;
-
-		const tableData = parseHtmlToTableData(sourceHtml);
-		if (!tableData) return;
-
-		const markdown = markdownTableToString(tableData);
-		const success = await replaceTableInActiveFile(this.app, tableEl, markdown);
-
-		if (success) {
-			new Notice(this.t.tableConvertedToMarkdown);
-		}
-	}
-
-	// --- Persistence (auto-detect mode) ---
-
-	private async persistTableChanges(tableEl: HTMLTableElement): Promise<void> {
+	private persistTableChanges(tableEl: HTMLTableElement, editor?: Editor): void {
 		const context = this.tableContexts.get(tableEl);
 		const html = serializeTableToHtml(tableEl);
 
@@ -636,16 +637,21 @@ export default class BetterTablesPlugin extends Plugin {
 				new Notice(this.t.convertToHtmlForPersistence);
 				return;
 			}
-			await replaceTableSource(this.app, context, tableEl, html);
-		} else {
-			// Live preview
-			const isHtml = await isTableHtmlInActiveFile(this.app, tableEl);
-			if (!isHtml) {
+			replaceTableSource(this.app, context, tableEl, html);
+		} else if (editor) {
+			// Live preview: use Editor API
+			if (!isTableHtmlInEditor(editor, tableEl)) {
 				new Notice(this.t.convertToHtmlForPersistence);
 				return;
 			}
-			await replaceTableInActiveFile(this.app, tableEl, html);
+			replaceTableInEditor(editor, tableEl, html);
 		}
+	}
+
+	private isTableHtml(tableEl: HTMLTableElement): boolean {
+		const context = this.tableContexts.get(tableEl);
+		if (!context) return false;
+		return isTableFromHtmlSource(context, tableEl);
 	}
 
 	private toggleHeaderRow(editor: Editor): void {
@@ -658,6 +664,23 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private addTableCaption(editor: Editor): void {
 		new Notice(this.t.useRightClickMenu);
+	}
+
+	private addCaptionSupport(tableEl: HTMLTableElement, context: MarkdownPostProcessorContext): void {
+		// Check if there's a caption element before the table
+		const parent = tableEl.parentElement;
+		if (parent) {
+			const prevSibling = tableEl.previousElementSibling;
+			if (prevSibling && prevSibling.tagName === 'P') {
+				const text = prevSibling.textContent?.trim();
+				if (text && text.startsWith('Table:')) {
+					const caption = text.substring(6).trim();
+					const captionEl = tableEl.createEl('caption');
+					captionEl.textContent = caption;
+					prevSibling.remove();
+				}
+			}
+		}
 	}
 }
 
