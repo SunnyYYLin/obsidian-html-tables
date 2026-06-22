@@ -1,5 +1,7 @@
 export class TableMenu {
 	static show(tableEl: HTMLTableElement, e: MouseEvent, actions: Array<{ text: string; action: () => void; disabled?: boolean }>): void {
+		activeDocument.querySelectorAll('.table-context-menu').forEach(menu => menu.remove());
+
 		// Create a simple context menu
 		const menu = activeDocument.createElement('div');
 		menu.addClass('table-context-menu');

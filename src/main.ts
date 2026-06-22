@@ -5,7 +5,6 @@ import {
 	Editor,
 	App,
 	Modal,
-	MarkdownView,
 } from 'obsidian';
 import {
 	BetterTablesSettings,
@@ -59,7 +58,6 @@ export default class BetterTablesPlugin extends Plugin {
 			this.lastRightClickedCell = target.closest('td, th');
 			if (this.lastRightClickedTable) {
 				this.syncNativeSelectedCells(this.lastRightClickedTable);
-				this.showLivePreviewTableMenu(e, this.lastRightClickedTable);
 			}
 		};
 		activeDocument.addEventListener('contextmenu', this.contextmenuHandler, true);
@@ -73,11 +71,6 @@ export default class BetterTablesPlugin extends Plugin {
 				if (!tableEl && !sourceRange) return;
 				// Reading-mode tables are handled by their own per-table listener
 				if (tableEl && this.tableContexts.has(tableEl)) return;
-
-				// Enhance table on first right-click
-				if (tableEl && !this.enhancedTables.has(tableEl)) {
-					this.enhanceTableLivePreview(tableEl);
-				}
 
 				const t = this.t;
 				menu.addSeparator();
@@ -366,50 +359,6 @@ export default class BetterTablesPlugin extends Plugin {
 				this.lastSelectedCell = cellEl;
 			});
 		});
-	}
-
-	private showLivePreviewTableMenu(e: MouseEvent, tableEl: HTMLTableElement): void {
-		if (this.tableContexts.has(tableEl)) return;
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		const editor = view?.editor;
-		if (!editor) return;
-
-		e.preventDefault();
-		e.stopPropagation();
-		if (!this.enhancedTables.has(tableEl)) {
-			this.enhanceTableLivePreview(tableEl);
-		}
-		TableMenu.show(tableEl, e, this.getLiveModeActions(tableEl, editor));
-	}
-
-	private getLiveModeActions(tableEl: HTMLTableElement, editor: Editor): Array<{ text: string; action: () => void; disabled?: boolean }> {
-		return [
-			{ text: this.t.mergeCells, action: () => this.mergeSelectedCells(tableEl, editor), disabled: this.selectedCells.length < 2 },
-			{ text: this.t.unmergeCells, action: () => this.unmergeCells(tableEl, editor) },
-			{ text: '---', action: () => undefined },
-			{ text: this.t.toggleHeaderRow, action: () => this.toggleHeaderRowInSource(editor, tableEl) },
-			{ text: this.t.toggleHeaderColumn, action: () => this.toggleHeaderColumnInSource(editor, tableEl) },
-			{ text: this.t.addCaption, action: () => this.addCaptionInSource(editor, tableEl) },
-			{ text: '---', action: () => undefined },
-			{ text: this.t.autoFitColumns, action: () => {
-				TableStyler.autoFitColumns(tableEl);
-				this.persistTableChanges(tableEl, editor);
-			} },
-			{ text: this.t.equalColumnWidth, action: () => {
-				TableStyler.equalizeColumns(tableEl);
-				this.persistTableChanges(tableEl, editor);
-			} },
-			{ text: '---', action: () => undefined },
-			{ text: this.t.left, action: () => this.applyAlignment(tableEl, editor, 'horizontal', 'left') },
-			{ text: this.t.center, action: () => this.applyAlignment(tableEl, editor, 'horizontal', 'center') },
-			{ text: this.t.right, action: () => this.applyAlignment(tableEl, editor, 'horizontal', 'right') },
-			{ text: this.t.top, action: () => this.applyAlignment(tableEl, editor, 'vertical', 'top') },
-			{ text: this.t.middle, action: () => this.applyAlignment(tableEl, editor, 'vertical', 'middle') },
-			{ text: this.t.bottom, action: () => this.applyAlignment(tableEl, editor, 'vertical', 'bottom') },
-			{ text: '---', action: () => undefined },
-			{ text: this.t.convertToHtml, action: () => this.convertTableToHtmlLive(editor, tableEl) },
-			{ text: this.t.convertToMarkdown, action: () => this.convertTableToMarkdownLive(editor, tableEl) },
-		];
 	}
 
 	private selectCell(cellEl: HTMLElement): void {
