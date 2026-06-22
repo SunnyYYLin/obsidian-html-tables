@@ -432,6 +432,7 @@ export default class BetterTablesPlugin extends Plugin {
 		handle.addEventListener('dblclick', (e: MouseEvent) => {
 			e.preventDefault();
 			TableStyler.autoFitColumn(tableEl, colIndex);
+			this.persistTableChanges(tableEl);
 		});
 
 		handle.addEventListener('mousedown', (e: MouseEvent) => {
@@ -551,6 +552,13 @@ export default class BetterTablesPlugin extends Plugin {
 				this.lastSelectedCell = cellEl;
 				this.startCellDragSelection(tableEl, cellEl);
 			});
+			cell.addEventListener('dblclick', (e: Event) => {
+				const mouseEvent = e as MouseEvent;
+				if (mouseEvent.button !== 0) return;
+				e.preventDefault();
+				e.stopPropagation();
+				this.editCellText(tableEl, cell as HTMLElement);
+			});
 		});
 	}
 
@@ -569,11 +577,50 @@ export default class BetterTablesPlugin extends Plugin {
 			e.preventDefault();
 			e.stopPropagation();
 			if (edge === 'top') {
-				this.selectColumnAtPoint(tableEl, e.clientX);
+				const colIndex = this.getColumnIndexAtPoint(tableEl, e.clientX);
+				if (colIndex >= 0) {
+					this.selectColumnRange(tableEl, colIndex, colIndex);
+					this.startEdgeDragSelection(tableEl, 'top', colIndex);
+				}
 			} else {
-				this.selectRowAtPoint(tableEl, e.clientY);
+				const rowIndex = this.getRowIndexAtPoint(tableEl, e.clientY);
+				if (rowIndex >= 0) {
+					this.selectRowRange(tableEl, rowIndex, rowIndex);
+					this.startEdgeDragSelection(tableEl, 'left', rowIndex);
+				}
 			}
 		}, true);
+
+		tableEl.addEventListener('mousemove', (e: MouseEvent) => {
+			const edge = this.getTableEdgeHit(tableEl, e);
+			tableEl.toggleClass('better-table-edge-column-hover', edge === 'top');
+			tableEl.toggleClass('better-table-edge-row-hover', edge === 'left');
+		});
+
+		tableEl.addEventListener('mouseleave', () => {
+			tableEl.removeClass('better-table-edge-column-hover');
+			tableEl.removeClass('better-table-edge-row-hover');
+		});
+	}
+
+	private startEdgeDragSelection(tableEl: HTMLTableElement, edge: 'top' | 'left', startIndex: number): void {
+		const onMouseMove = (moveEvent: MouseEvent) => {
+			if (edge === 'top') {
+				const colIndex = this.getColumnIndexAtPoint(tableEl, moveEvent.clientX);
+				if (colIndex >= 0) this.selectColumnRange(tableEl, startIndex, colIndex);
+			} else {
+				const rowIndex = this.getRowIndexAtPoint(tableEl, moveEvent.clientY);
+				if (rowIndex >= 0) this.selectRowRange(tableEl, startIndex, rowIndex);
+			}
+		};
+
+		const onMouseUp = () => {
+			activeDocument.removeEventListener('mousemove', onMouseMove);
+			activeDocument.removeEventListener('mouseup', onMouseUp);
+		};
+
+		activeDocument.addEventListener('mousemove', onMouseMove);
+		activeDocument.addEventListener('mouseup', onMouseUp);
 	}
 
 	private startCellDragSelection(tableEl: HTMLTableElement, startCell: HTMLElement): void {
@@ -648,33 +695,57 @@ export default class BetterTablesPlugin extends Plugin {
 	}
 
 	private selectRowAtPoint(tableEl: HTMLTableElement, clientY: number): void {
-		const row = Array.from(tableEl.querySelectorAll<HTMLTableRowElement>('tr'))
-			.find(rowEl => {
-				const rect = rowEl.getBoundingClientRect();
-				return clientY >= rect.top && clientY <= rect.bottom;
-			});
-		if (!row) return;
+		const rowIndex = this.getRowIndexAtPoint(tableEl, clientY);
+		if (rowIndex < 0) return;
+		this.selectRowRange(tableEl, rowIndex, rowIndex);
+	}
+
+	private selectRowRange(tableEl: HTMLTableElement, startIndex: number, endIndex: number): void {
+		const rows = Array.from(tableEl.querySelectorAll<HTMLTableRowElement>('tr'));
+		const minIndex = Math.min(startIndex, endIndex);
+		const maxIndex = Math.max(startIndex, endIndex);
 
 		this.clearCellSelection(tableEl);
-		row.querySelectorAll<HTMLElement>('td, th').forEach(cell => this.selectCell(cell));
-		this.lastSelectedCell = row.querySelector<HTMLElement>('td, th');
+		for (let index = minIndex; index <= maxIndex; index++) {
+			rows[index]?.querySelectorAll<HTMLElement>('td, th').forEach(cell => this.selectCell(cell));
+		}
+		this.lastSelectedCell = this.selectedCells[this.selectedCells.length - 1] ?? null;
 	}
 
 	private selectColumnAtPoint(tableEl: HTMLTableElement, clientX: number): void {
+		const colIndex = this.getColumnIndexAtPoint(tableEl, clientX);
+		if (colIndex < 0) return;
+		this.selectColumnRange(tableEl, colIndex, colIndex);
+	}
+
+	private selectColumnRange(tableEl: HTMLTableElement, startIndex: number, endIndex: number): void {
+		const minIndex = Math.min(startIndex, endIndex);
+		const maxIndex = Math.max(startIndex, endIndex);
+		this.clearCellSelection(tableEl);
+		tableEl.querySelectorAll('tr').forEach(row => {
+			for (let index = minIndex; index <= maxIndex; index++) {
+				const cell = row.querySelectorAll<HTMLElement>('td, th')[index];
+				if (cell) this.selectCell(cell);
+			}
+		});
+		this.lastSelectedCell = this.selectedCells[this.selectedCells.length - 1] ?? null;
+	}
+
+	private getRowIndexAtPoint(tableEl: HTMLTableElement, clientY: number): number {
+		return Array.from(tableEl.querySelectorAll<HTMLTableRowElement>('tr'))
+			.findIndex(rowEl => {
+				const rect = rowEl.getBoundingClientRect();
+				return clientY >= rect.top && clientY <= rect.bottom;
+			});
+	}
+
+	private getColumnIndexAtPoint(tableEl: HTMLTableElement, clientX: number): number {
 		const firstRow = tableEl.querySelector('tr');
 		const cells = Array.from(firstRow?.querySelectorAll<HTMLElement>('td, th') ?? []);
-		const colIndex = cells.findIndex(cell => {
+		return cells.findIndex(cell => {
 			const rect = cell.getBoundingClientRect();
 			return clientX >= rect.left && clientX <= rect.right;
 		});
-		if (colIndex < 0) return;
-
-		this.clearCellSelection(tableEl);
-		tableEl.querySelectorAll('tr').forEach(row => {
-			const cell = row.querySelectorAll<HTMLElement>('td, th')[colIndex];
-			if (cell) this.selectCell(cell);
-		});
-		this.lastSelectedCell = this.selectedCells[this.selectedCells.length - 1] ?? null;
 	}
 
 	private getTableEdgeHit(tableEl: HTMLTableElement, e: MouseEvent): 'top' | 'left' | null {
@@ -692,6 +763,48 @@ export default class BetterTablesPlugin extends Plugin {
 		const cell = element?.closest<HTMLElement>('td, th') ?? null;
 		if (!cell || cell.closest('table') !== tableEl) return null;
 		return cell;
+	}
+
+	private editCellText(tableEl: HTMLTableElement, cellEl: HTMLElement): void {
+		if (cellEl.hasClass('better-table-cell-editing')) return;
+		const originalText = cellEl.textContent ?? '';
+		cellEl.addClass('better-table-cell-editing');
+		cellEl.setAttribute('contenteditable', 'true');
+		cellEl.focus();
+
+		const selection = activeWindow.getSelection();
+		const range = activeDocument.createRange();
+		range.selectNodeContents(cellEl);
+		range.collapse(false);
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+
+		const finish = (commit: boolean) => {
+			cellEl.removeEventListener('blur', onBlur);
+			cellEl.removeEventListener('keydown', onKeyDown);
+			cellEl.removeClass('better-table-cell-editing');
+			cellEl.removeAttribute('contenteditable');
+			if (!commit) {
+				cellEl.textContent = originalText;
+				return;
+			}
+			cellEl.removeAttribute('data-better-raw');
+			this.persistTableChanges(tableEl);
+		};
+
+		const onBlur = () => finish(true);
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Enter' && !event.shiftKey) {
+				event.preventDefault();
+				finish(true);
+			} else if (event.key === 'Escape') {
+				event.preventDefault();
+				finish(false);
+			}
+		};
+
+		cellEl.addEventListener('blur', onBlur);
+		cellEl.addEventListener('keydown', onKeyDown);
 	}
 
 	private getCellPosition(cellEl: HTMLElement): { row: number; col: number } | null {
@@ -829,7 +942,10 @@ export default class BetterTablesPlugin extends Plugin {
 		const range = findTableNearEditorSelection(editor) ?? (tableEl ? findTableInSource(lines, tableEl) : null);
 		if (!range) return;
 		if (range.kind === 'html') {
-			new Notice(this.t.convertToMarkdown);
+			if (!tableEl || !this.canPersistLiveTable(editor, tableEl)) return;
+			const added = this.toggleHeaderRowInDom(tableEl);
+			this.persistTableChanges(tableEl, editor);
+			new Notice(added ? this.t.headerRowAdded : this.t.headerRowRemoved);
 			return;
 		}
 
@@ -866,29 +982,59 @@ export default class BetterTablesPlugin extends Plugin {
 	private toggleHeaderColumnInSource(editor: Editor, tableEl: HTMLTableElement): void {
 		if (!this.canPersistLiveTable(editor, tableEl)) return;
 		this.toggleHeaderColumnInDom(tableEl);
-		if (isTableHtmlInEditor(editor, tableEl)) {
-			replaceTableInEditor(editor, tableEl, serializeTableToHtml(tableEl));
-		} else {
-			replaceTableInEditor(editor, tableEl, serializeTableToHtml(tableEl));
-			new Notice(this.t.tableConvertedToHtml);
-		}
+		this.persistTableChanges(tableEl, editor);
 		new Notice(this.t.headerColumnToggled);
 	}
 
+	private toggleHeaderRowInDom(tableEl: HTMLTableElement): boolean {
+		const firstRow = tableEl.querySelector('tr');
+		if (!firstRow) return false;
+		const cells = Array.from(firstRow.querySelectorAll('td, th'));
+		const firstRowIsHeader = cells.length > 0 && cells.every(cell => cell.tagName === 'TH');
+		const headerColumnEnabled = this.hasHeaderColumn(tableEl);
+		cells.forEach(cell => {
+			const index = cells.indexOf(cell);
+			const shouldBeHeader = !firstRowIsHeader || (headerColumnEnabled && index === 0);
+			const newCell = activeDocument.createElement(shouldBeHeader ? 'th' : 'td');
+			cell.childNodes.forEach(node => newCell.appendChild(node.cloneNode(true)));
+			Array.from(cell.attributes).forEach(attr => {
+				newCell.setAttribute(attr.name, attr.value);
+			});
+			cell.replaceWith(newCell);
+		});
+		return !firstRowIsHeader;
+	}
+
 	private toggleHeaderColumnInDom(tableEl: HTMLTableElement): void {
-		const rows = tableEl.querySelectorAll('tr');
-		const firstColumnIsHeader = Array.from(rows).some(row => row.querySelector('td, th')?.tagName === 'TH');
-		rows.forEach(row => {
+		const rows = Array.from(tableEl.querySelectorAll('tr'));
+		const firstColumnIsHeader = this.hasHeaderColumn(tableEl);
+		const firstRowIsHeader = this.hasHeaderRow(tableEl);
+		rows.forEach((row, rowIndex) => {
 			const firstCell = row.querySelector('td, th');
 			if (!firstCell) return;
 
-			const newCell = activeDocument.createElement(firstColumnIsHeader ? 'td' : 'th');
+			const shouldBeHeader = !firstColumnIsHeader || (firstRowIsHeader && rowIndex === 0);
+			const newCell = activeDocument.createElement(shouldBeHeader ? 'th' : 'td');
 			firstCell.childNodes.forEach(node => newCell.appendChild(node.cloneNode(true)));
 			Array.from(firstCell.attributes).forEach(attr => {
 				newCell.setAttribute(attr.name, attr.value);
 			});
 			firstCell.replaceWith(newCell);
 		});
+	}
+
+	private hasHeaderRow(tableEl: HTMLTableElement): boolean {
+		const firstRowCells = Array.from(tableEl.querySelector('tr')?.querySelectorAll('td, th') ?? []);
+		return firstRowCells.length > 0 && firstRowCells.every(cell => cell.tagName === 'TH');
+	}
+
+	private hasHeaderColumn(tableEl: HTMLTableElement): boolean {
+		const rows = Array.from(tableEl.querySelectorAll('tr'));
+		const dataRows = rows.length > 1 ? rows.slice(1) : rows;
+		const firstColumnCells = dataRows
+			.map(row => row.querySelector('td, th'))
+			.filter(cell => cell !== null);
+		return firstColumnCells.length > 0 && firstColumnCells.every(cell => cell.tagName === 'TH');
 	}
 
 	/**
@@ -909,6 +1055,13 @@ export default class BetterTablesPlugin extends Plugin {
 			const lines = sourceText.split('\n');
 			const range = findTableNearEditorSelection(editor) ?? (tableEl ? findTableInSource(lines, tableEl) : null);
 			if (!range) return;
+			if (range.kind === 'html' && tableEl) {
+				const captionEl = tableEl.createEl('caption');
+				captionEl.textContent = caption;
+				this.persistTableChanges(tableEl, editor);
+				new Notice(this.t.captionAdded);
+				return;
+			}
 
 			// Insert caption line before the table
 			editor.replaceRange(
@@ -1033,6 +1186,7 @@ export default class BetterTablesPlugin extends Plugin {
 		const colSpan = parseInt(mergedCell.getAttribute('colspan') || '1');
 
 		// Remove spans
+		const cellsToRestore = this.createEmptyMergeCells(rowSpan, colSpan, mergedCell.tagName.toLowerCase());
 		mergedCell.removeAttribute('rowspan');
 		mergedCell.removeAttribute('colspan');
 
@@ -1055,8 +1209,33 @@ export default class BetterTablesPlugin extends Plugin {
 			}
 		}
 
+		cellsToRestore.forEach(stored => {
+			if (stored.row === 0 && stored.col === 0) return;
+			const row = rows[pos.row + stored.row];
+			if (!row) return;
+			const existing = row.querySelectorAll('td, th')[pos.col + stored.col] as HTMLElement | undefined;
+			if (existing?.hasClass('merged-cell-hidden')) return;
+
+			const restoredCell = activeDocument.createElement(stored.tag === 'th' ? 'th' : 'td');
+			restoredCell.textContent = stored.text;
+			const before = row.querySelectorAll('td, th')[pos.col + stored.col] ?? null;
+			row.insertBefore(restoredCell, before);
+		});
+		this.addCellSelectionHandlers(tableEl);
+
 		new Notice(this.t.cellsUnmerged);
 		this.persistTableChanges(tableEl, editor);
+	}
+
+	private createEmptyMergeCells(rowSpan: number, colSpan: number, tag: string): Array<{ row: number; col: number; tag: string; text: string }> {
+		const cells: Array<{ row: number; col: number; tag: string; text: string }> = [];
+		for (let row = 0; row < rowSpan; row++) {
+			for (let col = 0; col < colSpan; col++) {
+				if (row === 0 && col === 0) continue;
+				cells.push({ row, col, tag, text: '' });
+			}
+		}
+		return cells;
 	}
 
 	private applyAlignment(
@@ -1089,6 +1268,7 @@ export default class BetterTablesPlugin extends Plugin {
 			{ text: this.t.mergeCells, action: () => this.mergeSelectedCells(tableEl), disabled: this.selectedCells.length < 2 },
 			{ text: this.t.unmergeCells, action: () => this.unmergeCells(tableEl) },
 			{ text: '---', action: () => undefined },
+			{ text: this.t.toggleHeaderRow, action: () => this.toggleHeaderRowReading(tableEl) },
 			{ text: this.t.toggleHeaderColumn, action: () => this.toggleHeaderColumnReading(tableEl) },
 			{ text: this.t.addCaption, action: () => this.addCaptionReading(tableEl) },
 			{ text: '---', action: () => undefined },
@@ -1108,6 +1288,12 @@ export default class BetterTablesPlugin extends Plugin {
 			{ text: this.t.middle, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'middle') },
 			{ text: this.t.bottom, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'bottom') },
 		];
+	}
+
+	private toggleHeaderRowReading(tableEl: HTMLTableElement): void {
+		const added = this.toggleHeaderRowInDom(tableEl);
+		this.persistTableChanges(tableEl);
+		new Notice(added ? this.t.headerRowAdded : this.t.headerRowRemoved);
 	}
 
 	private toggleHeaderColumnReading(tableEl: HTMLTableElement): void {

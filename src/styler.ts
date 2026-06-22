@@ -27,7 +27,7 @@ export class TableStyler {
 		rows.forEach(row => {
 			const cells = row.querySelectorAll('td, th');
 			if (colIndex < cells.length) {
-				(cells[colIndex] as HTMLElement).style.width = `${width}px`;
+				(cells[colIndex] as HTMLElement).style.setProperty('width', `${width}px`);
 			}
 		});
 	}
@@ -36,12 +36,12 @@ export class TableStyler {
 		const rows = tableEl.querySelectorAll('tr');
 		let maxWidth = 0;
 
-		// Calculate max content width for the column
+		// Calculate the smallest width that keeps every cell in the column on one line.
 		rows.forEach(row => {
 			const cells = row.querySelectorAll('td, th');
 			if (colIndex < cells.length) {
 				const cell = cells[colIndex] as HTMLElement;
-				const width = cell.scrollWidth;
+				const width = TableStyler.getNoWrapCellWidth(cell);
 				if (width > maxWidth) {
 					maxWidth = width;
 				}
@@ -59,12 +59,12 @@ export class TableStyler {
 		const firstRow = rows[0];
 		const colCount = firstRow?.querySelectorAll('td, th').length || 0;
 
-		// Calculate max content width for each column
+		// Calculate the smallest widths that keep text in each column on one line.
 		const maxWidths = new Array<number>(colCount).fill(0);
 		rows.forEach(row => {
 			const cells = row.querySelectorAll('td, th');
 			cells.forEach((cell, index) => {
-				const width = (cell as HTMLElement).scrollWidth;
+				const width = TableStyler.getNoWrapCellWidth(cell as HTMLElement);
 				const maxWidth = maxWidths[index];
 				if (maxWidth !== undefined && width > maxWidth) {
 					maxWidths[index] = width;
@@ -78,7 +78,7 @@ export class TableStyler {
 			cells.forEach((cell, index) => {
 				const maxWidth = maxWidths[index];
 				if (maxWidth !== undefined) {
-					(cell as HTMLElement).style.width = `${maxWidth}px`;
+					(cell as HTMLElement).style.setProperty('width', `${maxWidth}px`);
 				}
 			});
 		});
@@ -93,8 +93,25 @@ export class TableStyler {
 		rows.forEach(row => {
 			const cells = row.querySelectorAll('td, th');
 			cells.forEach(cell => {
-				(cell as HTMLElement).style.width = `${equalWidth}px`;
+				(cell as HTMLElement).style.setProperty('width', `${equalWidth}px`);
 			});
 		});
+	}
+
+	private static getNoWrapCellWidth(cell: HTMLElement): number {
+		const styles = activeWindow.getComputedStyle(cell);
+		const canvas = activeDocument.createElement('canvas');
+		const context = canvas.getContext('2d');
+		if (!context) return Math.max(50, cell.scrollWidth);
+		context.font = styles.font;
+		const text = cell.textContent?.trim() ?? '';
+		const padding = parseFloat(styles.paddingLeft)
+			+ parseFloat(styles.paddingRight)
+			+ parseFloat(styles.borderLeftWidth)
+			+ parseFloat(styles.borderRightWidth);
+		const letterSpacing = parseFloat(styles.letterSpacing);
+		const spacing = Number.isFinite(letterSpacing) ? Math.max(0, text.length - 1) * letterSpacing : 0;
+		const width = Math.ceil(context.measureText(text).width + spacing + padding + 2);
+		return Math.max(50, width);
 	}
 }

@@ -32,6 +32,48 @@
 	cursor: pointer;
 }
 
+.better-table.better-table-edge-column-hover {
+	cursor: col-resize;
+}
+
+.better-table.better-table-edge-column-hover th,
+.better-table.better-table-edge-column-hover td {
+	cursor: col-resize;
+}
+
+.better-table.better-table-edge-row-hover {
+	cursor: row-resize;
+}
+
+.better-table.better-table-edge-row-hover th,
+.better-table.better-table-edge-row-hover td {
+	cursor: row-resize;
+}
+
+.better-table.better-table-edge-column-hover::before,
+.better-table.better-table-edge-row-hover::before {
+	content: "";
+	position: absolute;
+	z-index: 10;
+	pointer-events: none;
+	background-color: var(--interactive-accent);
+	opacity: 0.9;
+}
+
+.better-table.better-table-edge-column-hover::before {
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 3px;
+}
+
+.better-table.better-table-edge-row-hover::before {
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 3px;
+}
+
 .better-table th {
 	background-color: var(--background-secondary);
 	font-weight: bold;
@@ -46,6 +88,14 @@
 .better-table th.cell-selected {
 	background-color: var(--background-modifier-hover);
 	box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+.better-table td.better-table-cell-editing,
+.better-table th.better-table-cell-editing {
+	cursor: text;
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+	background-color: var(--background-primary);
 }
 
 /* Alignment classes */
