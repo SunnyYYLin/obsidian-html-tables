@@ -1396,6 +1396,8 @@ export default class BetterTablesPlugin extends Plugin {
 				if (hiddenCell && hiddenCell.hasClass('merged-cell-hidden')) {
 					hiddenCell.removeClass('merged-cell-hidden');
 					hiddenCell.removeAttribute('data-merged');
+					hiddenCell.removeAttribute('data-better-raw');
+					hiddenCell.empty();
 				}
 			}
 		}

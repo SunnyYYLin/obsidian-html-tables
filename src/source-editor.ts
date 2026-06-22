@@ -299,10 +299,50 @@ export function replaceTableRangeInEditor(
 	newContent: string,
 ): boolean {
 	const lines = editor.getValue().split('\n');
+	const anchor = editor.getCursor('anchor');
+	const head = editor.getCursor('head');
 	const from = { line: range.start, ch: 0 };
 	const to = { line: range.end, ch: lines[range.end]!.length };
+	const oldLineCount = range.end - range.start + 1;
+	const newLineCount = newContent.split('\n').length;
 	editor.replaceRange(newContent, from, to);
+	const maxLine = editor.getValue().split('\n').length - 1;
+	const restoredAnchor = restorePosition(anchor, range, oldLineCount, newLineCount, maxLine);
+	const restoredHead = restorePosition(head, range, oldLineCount, newLineCount, maxLine);
+	editor.setSelection(restoredAnchor, restoredHead);
+	editor.scrollIntoView({ from: restoredHead, to: restoredHead }, false);
 	return true;
+}
+
+function restorePosition(
+	position: { line: number; ch: number },
+	range: TableBlock,
+	oldLineCount: number,
+	newLineCount: number,
+	maxLine: number,
+): { line: number; ch: number } {
+	const lineDelta = newLineCount - oldLineCount;
+	if (position.line > range.end) {
+		return {
+			line: clampLine(position.line + lineDelta, maxLine),
+			ch: position.ch,
+		};
+	}
+	if (position.line >= range.start) {
+		const offset = Math.min(position.line - range.start, newLineCount - 1);
+		return {
+			line: clampLine(range.start + offset, maxLine),
+			ch: position.ch,
+		};
+	}
+	return {
+		line: clampLine(position.line, maxLine),
+		ch: position.ch,
+	};
+}
+
+function clampLine(line: number, maxLine: number): number {
+	return Math.max(0, Math.min(line, maxLine));
 }
 
 /**

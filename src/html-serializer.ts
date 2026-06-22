@@ -58,20 +58,54 @@ export function parseHtmlToTableData(html: string): TableData | null {
 	let hasHeaderRow = false;
 	let hasHeaderColumn = false;
 
+	const rowSpanPlaceholders = new Map<number, number>();
+
 	trEls.forEach((tr, rowIndex) => {
-		const cells = tr.querySelectorAll('td, th');
 		const row: string[] = [];
-		cells.forEach((cell, colIndex) => {
-			row.push(cell.textContent?.trim() ?? '');
+		let colIndex = 0;
+
+		const fillSpannedColumns = () => {
+			while ((rowSpanPlaceholders.get(colIndex) ?? 0) > 0) {
+				row[colIndex] = '';
+				rowSpanPlaceholders.set(colIndex, (rowSpanPlaceholders.get(colIndex) ?? 0) - 1);
+				colIndex++;
+			}
+		};
+
+		Array.from(tr.querySelectorAll('td, th')).forEach((cell) => {
+			fillSpannedColumns();
+
+			const rowSpan = Math.max(1, parseInt(cell.getAttribute('rowspan') || '1'));
+			const colSpan = Math.max(1, parseInt(cell.getAttribute('colspan') || '1'));
+
+			row[colIndex] = cell.textContent?.trim() ?? '';
 			if (cell.tagName === 'TH') {
 				if (rowIndex === 0) hasHeaderRow = true;
 				if (colIndex === 0) hasHeaderColumn = true;
 			}
+
+			for (let offset = 1; offset < colSpan; offset++) {
+				row[colIndex + offset] = '';
+			}
+
+			if (rowSpan > 1) {
+				for (let offset = 0; offset < colSpan; offset++) {
+					rowSpanPlaceholders.set(colIndex + offset, rowSpan - 1);
+				}
+			}
+
+			colIndex += colSpan;
 		});
+
+		fillSpannedColumns();
 		if (row.length > 0) rows.push(row);
 	});
 
 	if (rows.length === 0) return null;
+	const maxColumns = Math.max(...rows.map(row => row.length));
+	rows.forEach(row => {
+		while (row.length < maxColumns) row.push('');
+	});
 
 	return { rows, hasHeaderRow, hasHeaderColumn, caption };
 }
