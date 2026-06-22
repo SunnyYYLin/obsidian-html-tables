@@ -124,7 +124,8 @@ export function tableDataToHtml(table: TableData): string {
 		row.forEach((cell, colIndex) => {
 			const isHeader = (table.hasHeaderRow && rowIndex === 0) || (table.hasHeaderColumn && colIndex === 0);
 			const cellEl = tr.createEl(isHeader ? 'th' : 'td');
-			cellEl.textContent = cell;
+			const trimmedCell = cell.trim();
+			if (trimmedCell) cellEl.textContent = trimmedCell;
 		});
 	});
 
