@@ -5,7 +5,6 @@ import {
 	Editor,
 	App,
 	Modal,
-	MarkdownView,
 } from 'obsidian';
 import {
 	BetterTablesSettings,
@@ -34,6 +33,7 @@ export default class BetterTablesPlugin extends Plugin {
 	private tableContexts = new WeakMap<HTMLTableElement, MarkdownPostProcessorContext>();
 	private enhancedTables = new WeakSet<HTMLTableElement>();
 	private lastRightClickedTable: HTMLTableElement | null = null;
+	private lastRightClickedCell: HTMLElement | null = null;
 	private contextmenuHandler?: (e: MouseEvent) => void;
 
 	async onload() {
@@ -54,9 +54,10 @@ export default class BetterTablesPlugin extends Plugin {
 		// Must use addEventListener directly (not registerDomEvent) for capture phase.
 		this.contextmenuHandler = (e: MouseEvent) => {
 			const target = e.target as HTMLElement;
-			this.lastRightClickedTable = target.closest('table') as HTMLTableElement | null;
+			this.lastRightClickedTable = target.closest('table');
+			this.lastRightClickedCell = target.closest('td, th');
 		};
-		document.addEventListener('contextmenu', this.contextmenuHandler, true);
+		activeDocument.addEventListener('contextmenu', this.contextmenuHandler, true);
 
 		// Inject table actions into the editor's native context menu (live preview)
 		this.registerEvent(
@@ -99,11 +100,42 @@ export default class BetterTablesPlugin extends Plugin {
 				);
 				menu.addItem((item) =>
 					item.setTitle(t.autoFitColumns)
-						.onClick(() => TableStyler.autoFitColumns(tableEl))
+						.onClick(() => {
+							TableStyler.autoFitColumns(tableEl);
+							this.persistTableChanges(tableEl, editor);
+						})
 				);
 				menu.addItem((item) =>
 					item.setTitle(t.equalColumnWidth)
-						.onClick(() => TableStyler.equalizeColumns(tableEl))
+						.onClick(() => {
+							TableStyler.equalizeColumns(tableEl);
+							this.persistTableChanges(tableEl, editor);
+						})
+				);
+				menu.addSeparator();
+				menu.addItem((item) =>
+					item.setTitle(t.left)
+						.onClick(() => this.applyAlignment(tableEl, editor, 'horizontal', 'left'))
+				);
+				menu.addItem((item) =>
+					item.setTitle(t.center)
+						.onClick(() => this.applyAlignment(tableEl, editor, 'horizontal', 'center'))
+				);
+				menu.addItem((item) =>
+					item.setTitle(t.right)
+						.onClick(() => this.applyAlignment(tableEl, editor, 'horizontal', 'right'))
+				);
+				menu.addItem((item) =>
+					item.setTitle(t.top)
+						.onClick(() => this.applyAlignment(tableEl, editor, 'vertical', 'top'))
+				);
+				menu.addItem((item) =>
+					item.setTitle(t.middle)
+						.onClick(() => this.applyAlignment(tableEl, editor, 'vertical', 'middle'))
+				);
+				menu.addItem((item) =>
+					item.setTitle(t.bottom)
+						.onClick(() => this.applyAlignment(tableEl, editor, 'vertical', 'bottom'))
 				);
 				menu.addSeparator();
 				menu.addItem((item) =>
@@ -142,7 +174,7 @@ export default class BetterTablesPlugin extends Plugin {
 
 	onunload() {
 		if (this.contextmenuHandler) {
-			document.removeEventListener('contextmenu', this.contextmenuHandler, true);
+			activeDocument.removeEventListener('contextmenu', this.contextmenuHandler, true);
 		}
 	}
 
@@ -175,19 +207,24 @@ export default class BetterTablesPlugin extends Plugin {
 	 * Adds resize handles, cell selection, and context menu.
 	 */
 	private enhanceTableLivePreview(tableEl: HTMLTableElement): void {
+		if (this.enhancedTables.has(tableEl)) return;
 		this.enhancedTables.add(tableEl);
 		tableEl.addClass('better-table');
+		this.enhanceRenderedContent(tableEl);
 		this.addColumnResizeHandles(tableEl);
 		this.addCellSelectionHandlers(tableEl);
 	}
 
 	private enhanceTable(tableEl: HTMLTableElement, context: MarkdownPostProcessorContext): void {
+		if (this.enhancedTables.has(tableEl)) return;
 		// Store context for source editing
 		this.tableContexts.set(tableEl, context);
 		this.enhancedTables.add(tableEl);
 
 		// Add CSS class for styling
 		tableEl.addClass('better-table');
+
+		this.enhanceRenderedContent(tableEl);
 
 		// Add drag handles for column resizing
 		this.addColumnResizeHandles(tableEl);
@@ -199,11 +236,20 @@ export default class BetterTablesPlugin extends Plugin {
 		if (this.settings.enableCaption) {
 			this.addCaptionSupport(tableEl, context);
 		}
+
+		tableEl.addEventListener('contextmenu', (e: MouseEvent) => {
+			e.preventDefault();
+			this.lastRightClickedTable = tableEl;
+			this.lastRightClickedCell = (e.target as HTMLElement).closest('td, th');
+			TableMenu.show(tableEl, e, this.getReadingModeActions(tableEl));
+		});
 	}
 
 	private addColumnResizeHandles(tableEl: HTMLTableElement): void {
-		const headerCells = tableEl.querySelectorAll('th');
+		const firstRow = tableEl.querySelector('tr');
+		const headerCells = Array.from(firstRow?.querySelectorAll<HTMLElement>('th, td') ?? []);
 		headerCells.forEach((cell, index) => {
+			if (cell.querySelector(':scope > .column-resize-handle')) return;
 			if (index < headerCells.length - 1) {
 				const handle = cell.createEl('div', {
 					cls: 'column-resize-handle',
@@ -243,6 +289,7 @@ export default class BetterTablesPlugin extends Plugin {
 			const onMouseUp = () => {
 				isResizing = false;
 				tableEl.removeClass('resizing');
+				this.persistTableChanges(tableEl);
 				activeDocument.removeEventListener('mousemove', onMouseMove);
 				activeDocument.removeEventListener('mouseup', onMouseUp);
 			};
@@ -255,6 +302,8 @@ export default class BetterTablesPlugin extends Plugin {
 	private addCellSelectionHandlers(tableEl: HTMLTableElement): void {
 		const cells = tableEl.querySelectorAll('td, th');
 		cells.forEach(cell => {
+			if ((cell as HTMLElement).hasClass('better-table-cell-ready')) return;
+			(cell as HTMLElement).addClass('better-table-cell-ready');
 			cell.addEventListener('mousedown', (e: Event) => {
 				const mouseEvent = e as MouseEvent;
 
@@ -348,6 +397,77 @@ export default class BetterTablesPlugin extends Plugin {
 		return { row: rowIndex, col: colIndex };
 	}
 
+	private enhanceRenderedContent(tableEl: HTMLTableElement): void {
+		tableEl.querySelectorAll('td, th').forEach((cell) => {
+			const cellEl = cell as HTMLElement;
+			const raw = cellEl.getAttribute('data-better-raw') ?? cellEl.textContent ?? '';
+			if (this.settings.enableFormula && raw.trim().startsWith('=')) {
+				cellEl.setAttribute('data-better-raw', raw);
+				const result = this.evaluateFormula(raw);
+				cellEl.empty();
+				cellEl.textContent = result === null ? raw : result.toString();
+				cellEl.toggleClass('formula-result', result !== null);
+				cellEl.toggleClass('formula-error', result === null);
+				cellEl.addClass('formula-cell');
+			} else if (this.settings.enableNewline && raw.includes('\\n')) {
+				cellEl.setAttribute('data-better-raw', raw);
+				cellEl.empty();
+				raw.split('\\n').forEach((line, index) => {
+					if (index > 0) cellEl.createEl('br');
+					cellEl.appendText(line);
+				});
+			}
+		});
+	}
+
+	private evaluateFormula(formula: string): number | null {
+		const expr = formula.substring(1).trim();
+		if (!/^[\d+\-*/().\s]+$/.test(expr)) return null;
+		try {
+			return this.parseExpression(expr);
+		} catch {
+			return null;
+		}
+	}
+
+	private parseExpression(expr: string): number {
+		const tokens = expr.replace(/\s+/g, '').match(/\d+(?:\.\d+)?|[()+\-*/]/g) ?? [];
+		let index = 0;
+		const parseFactor = (): number => {
+			const token = tokens[index++];
+			if (token === '(') {
+				const value = parseSum();
+				if (tokens[index++] !== ')') throw new Error('Unbalanced formula');
+				return value;
+			}
+			if (token === '-') return -parseFactor();
+			const value = Number(token);
+			if (!Number.isFinite(value)) throw new Error('Invalid formula');
+			return value;
+		};
+		const parseProduct = (): number => {
+			let value = parseFactor();
+			while (tokens[index] === '*' || tokens[index] === '/') {
+				const operator = tokens[index++];
+				const next = parseFactor();
+				value = operator === '*' ? value * next : value / next;
+			}
+			return value;
+		};
+		const parseSum = (): number => {
+			let value = parseProduct();
+			while (tokens[index] === '+' || tokens[index] === '-') {
+				const operator = tokens[index++];
+				const next = parseProduct();
+				value = operator === '+' ? value + next : value - next;
+			}
+			return value;
+		};
+		const result = parseSum();
+		if (index !== tokens.length || !Number.isFinite(result)) throw new Error('Invalid formula');
+		return result;
+	}
+
 	// --- Source-level operations (modify the markdown source via Editor API) ---
 
 	/**
@@ -392,23 +512,30 @@ export default class BetterTablesPlugin extends Plugin {
 	 * For now, this modifies the DOM only (visual change) and notifies the user.
 	 */
 	private toggleHeaderColumnInSource(editor: Editor, tableEl: HTMLTableElement): void {
-		// Markdown tables don't have a native header column concept.
-		// Toggle visually in the DOM.
+		this.toggleHeaderColumnInDom(tableEl);
+		if (isTableHtmlInEditor(editor, tableEl)) {
+			replaceTableInEditor(editor, tableEl, serializeTableToHtml(tableEl));
+		} else {
+			replaceTableInEditor(editor, tableEl, serializeTableToHtml(tableEl));
+			new Notice(this.t.tableConvertedToHtml);
+		}
+		new Notice(this.t.headerColumnToggled);
+	}
+
+	private toggleHeaderColumnInDom(tableEl: HTMLTableElement): void {
 		const rows = tableEl.querySelectorAll('tr');
+		const firstColumnIsHeader = Array.from(rows).some(row => row.querySelector('td, th')?.tagName === 'TH');
 		rows.forEach(row => {
 			const firstCell = row.querySelector('td, th');
 			if (!firstCell) return;
 
-			const isHeader = firstCell.tagName === 'TH';
-			const newCell = activeDocument.createElement(isHeader ? 'td' : 'th');
-			newCell.textContent = firstCell.textContent;
+			const newCell = activeDocument.createElement(firstColumnIsHeader ? 'td' : 'th');
+			firstCell.childNodes.forEach(node => newCell.appendChild(node.cloneNode(true)));
 			Array.from(firstCell.attributes).forEach(attr => {
 				newCell.setAttribute(attr.name, attr.value);
 			});
 			firstCell.replaceWith(newCell);
 		});
-
-		new Notice(this.t.headerColumnToggled);
 	}
 
 	/**
@@ -523,9 +650,9 @@ export default class BetterTablesPlugin extends Plugin {
 
 	private unmergeCells(tableEl: HTMLTableElement, editor?: Editor): void {
 		// Find a merged cell in the table
-		const mergedCell = tableEl.querySelector(
+		const mergedCell = tableEl.querySelector<HTMLElement>(
 			'td[rowspan], td[colspan], th[rowspan], th[colspan]'
-		) as HTMLElement | null;
+		);
 
 		if (!mergedCell) {
 			new Notice(this.t.cellNotMerged);
@@ -560,6 +687,80 @@ export default class BetterTablesPlugin extends Plugin {
 
 		new Notice(this.t.cellsUnmerged);
 		this.persistTableChanges(tableEl, editor);
+	}
+
+	private applyAlignment(
+		tableEl: HTMLTableElement,
+		editor: Editor | undefined,
+		direction: 'horizontal' | 'vertical',
+		value: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom',
+	): void {
+		const cells = this.selectedCells.length > 0
+			? this.selectedCells
+			: this.lastRightClickedCell
+				? [this.lastRightClickedCell]
+				: [];
+		if (cells.length === 0) return;
+
+		cells.forEach(cell => {
+			if (direction === 'horizontal') {
+				cell.style.textAlign = value;
+			} else {
+				cell.style.verticalAlign = value;
+			}
+		});
+
+		this.persistTableChanges(tableEl, editor);
+	}
+
+	private getReadingModeActions(tableEl: HTMLTableElement): Array<{ text: string; action: () => void; disabled?: boolean }> {
+		return [
+			{ text: this.t.mergeCells, action: () => this.mergeSelectedCells(tableEl), disabled: this.selectedCells.length < 2 },
+			{ text: this.t.unmergeCells, action: () => this.unmergeCells(tableEl) },
+			{ text: '---', action: () => undefined },
+			{ text: this.t.toggleHeaderColumn, action: () => this.toggleHeaderColumnReading(tableEl) },
+			{ text: this.t.addCaption, action: () => this.addCaptionReading(tableEl) },
+			{ text: '---', action: () => undefined },
+			{ text: this.t.autoFitColumns, action: () => {
+				TableStyler.autoFitColumns(tableEl);
+				this.persistTableChanges(tableEl);
+			} },
+			{ text: this.t.equalColumnWidth, action: () => {
+				TableStyler.equalizeColumns(tableEl);
+				this.persistTableChanges(tableEl);
+			} },
+			{ text: '---', action: () => undefined },
+			{ text: this.t.left, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'left') },
+			{ text: this.t.center, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'center') },
+			{ text: this.t.right, action: () => this.applyAlignment(tableEl, undefined, 'horizontal', 'right') },
+			{ text: this.t.top, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'top') },
+			{ text: this.t.middle, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'middle') },
+			{ text: this.t.bottom, action: () => this.applyAlignment(tableEl, undefined, 'vertical', 'bottom') },
+			{ text: '---', action: () => undefined },
+			{ text: this.t.convertToHtml, action: () => void this.convertTableToHtml(tableEl) },
+			{ text: this.t.convertToMarkdown, action: () => void this.convertTableToMarkdown(tableEl) },
+		];
+	}
+
+	private toggleHeaderColumnReading(tableEl: HTMLTableElement): void {
+		this.toggleHeaderColumnInDom(tableEl);
+		this.persistTableChanges(tableEl);
+		new Notice(this.t.headerColumnToggled);
+	}
+
+	private addCaptionReading(tableEl: HTMLTableElement): void {
+		if (tableEl.querySelector('caption')) {
+			new Notice(this.t.tableAlreadyHasCaption);
+			return;
+		}
+		const modal = new CaptionModal(this.app, this.t, (caption) => {
+			if (!caption) return;
+			const captionEl = tableEl.createEl('caption');
+			captionEl.textContent = caption;
+			this.persistTableChanges(tableEl);
+			new Notice(this.t.captionAdded);
+		});
+		modal.open();
 	}
 
 	// --- Conversion (live preview, via Editor API) ---
@@ -639,15 +840,13 @@ export default class BetterTablesPlugin extends Plugin {
 		if (context) {
 			// Reading mode
 			if (!isTableFromHtmlSource(context, tableEl)) {
-				new Notice(this.t.convertToHtmlForPersistence);
-				return;
+				new Notice(this.t.tableConvertedToHtml);
 			}
-			replaceTableSource(this.app, context, tableEl, html);
+			void replaceTableSource(this.app, context, tableEl, html);
 		} else if (editor) {
 			// Live preview: use Editor API
 			if (!isTableHtmlInEditor(editor, tableEl)) {
-				new Notice(this.t.convertToHtmlForPersistence);
-				return;
+				new Notice(this.t.tableConvertedToHtml);
 			}
 			replaceTableInEditor(editor, tableEl, html);
 		}

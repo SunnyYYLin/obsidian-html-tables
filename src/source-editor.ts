@@ -81,6 +81,7 @@ export function isTableFromHtmlSource(
 interface TableBlock {
 	start: number; // first line of table (inclusive)
 	end: number;   // last line of table (inclusive)
+	kind: 'markdown' | 'html';
 }
 
 /**
@@ -99,7 +100,15 @@ function findAllTableBlocks(lines: string[]): TableBlock[] {
 			while (end + 1 < lines.length && lines[end + 1]!.trim().startsWith('|')) {
 				end++;
 			}
-			blocks.push({ start, end });
+			blocks.push({ start, end, kind: 'markdown' });
+			i = end + 1;
+		} else if (/^<table[\s>]/i.test(line)) {
+			const start = i;
+			let end = i;
+			while (end + 1 < lines.length && !/<\/table>/i.test(lines[end]!)) {
+				end++;
+			}
+			blocks.push({ start, end, kind: 'html' });
 			i = end + 1;
 		} else {
 			i++;
@@ -158,13 +167,25 @@ function findTableByContent(sourceLines: string[], tableEl: HTMLTableElement, bl
 		.join('|');
 
 	for (const block of blocks) {
-		const line = sourceLines[block.start]!.trim();
-		const srcCells = line.split('|').filter(c => c.trim() !== '').map(c => c.trim()).join('|');
+		const source = sourceLines.slice(block.start, block.end + 1).join('\n');
+		const srcCells = block.kind === 'html'
+			? getFirstHtmlRowText(source)
+			: sourceLines[block.start]!.trim().split('|').filter(c => c.trim() !== '').map(c => c.trim()).join('|');
 		if (srcCells === firstRowText) {
 			return block;
 		}
 	}
 	return null;
+}
+
+function getFirstHtmlRowText(html: string): string {
+	const parser = new DOMParser();
+	const doc = parser.parseFromString(html, 'text/html');
+	const firstRow = doc.querySelector('tr');
+	if (!firstRow) return '';
+	return Array.from(firstRow.querySelectorAll('td, th'))
+		.map(c => c.textContent?.trim() ?? '')
+		.join('|');
 }
 
 /**
@@ -211,7 +232,7 @@ export function isTableHtmlInEditor(
 	const lines = sourceText.split('\n');
 	const range = findTableInSource(lines, tableEl);
 	if (!range) return false;
-	return isHtmlInSection(lines[range.start]!);
+	return range.kind === 'html' || isHtmlInSection(lines.slice(range.start, range.end + 1).join('\n'));
 }
 
 // --- Legacy vault-based functions (kept for reading mode) ---

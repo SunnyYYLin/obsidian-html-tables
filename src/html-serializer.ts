@@ -7,6 +7,16 @@ import { TableData } from './types';
 export function serializeTableToHtml(tableEl: HTMLTableElement): string {
 	const clone = tableEl.cloneNode(true) as HTMLTableElement;
 
+	clone.querySelectorAll('th, td').forEach(cell => {
+		const htmlCell = cell as HTMLElement;
+		const raw = htmlCell.getAttribute('data-better-raw');
+		if (raw !== null) {
+			htmlCell.empty();
+			htmlCell.textContent = raw;
+		}
+		htmlCell.removeAttribute('data-better-raw');
+	});
+
 	// Remove resize handle divs
 	clone.querySelectorAll('.column-resize-handle').forEach(el => el.remove());
 
@@ -22,12 +32,9 @@ export function serializeTableToHtml(tableEl: HTMLTableElement): string {
 	clone.querySelectorAll('[data-table-cache-key]').forEach(el => el.removeAttribute('data-table-cache-key'));
 	clone.querySelectorAll('[data-merged]').forEach(el => el.removeAttribute('data-merged'));
 
-	// Remove inline widths set by the resizer
+	// Keep user-facing width/alignment styles, but remove empty style attributes.
 	clone.querySelectorAll('th, td').forEach(cell => {
 		const htmlCell = cell as HTMLElement;
-		if (htmlCell.style.width) {
-			htmlCell.style.removeProperty('width');
-		}
 		if (!htmlCell.getAttribute('style') || htmlCell.getAttribute('style') === '') {
 			htmlCell.removeAttribute('style');
 		}
