@@ -173,6 +173,10 @@ function prettyPrintHtml(html: string): string {
 		else if (trimmed.endsWith('/>')) {
 			result += tab.repeat(indent) + trimmed + '\n';
 		}
+		// Complete inline element, e.g. <td>value</td>. Do not change nesting.
+		else if (isInlineCompleteElement(trimmed)) {
+			result += tab.repeat(indent) + trimmed + '\n';
+		}
 		// Opening tag (but not void elements like <br>, <img>, etc.)
 		else if (trimmed.startsWith('<') && !trimmed.startsWith('</') && !isVoidElement(trimmed)) {
 			result += tab.repeat(indent) + trimmed + '\n';
@@ -190,4 +194,9 @@ function prettyPrintHtml(html: string): string {
 function isVoidElement(tag: string): boolean {
 	const voidTags = ['<br', '<hr', '<img', '<input', '<meta', '<link'];
 	return voidTags.some(v => tag.toLowerCase().startsWith(v));
+}
+
+function isInlineCompleteElement(token: string): boolean {
+	const match = token.match(/^<([a-z][\w:-]*)(?:\s[^>]*)?>.*<\/\1>$/i);
+	return match !== null;
 }
