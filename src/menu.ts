@@ -1,8 +1,16 @@
-export interface TableMenuAction {
+export type TableMenuSeparator = { separator: true };
+
+export type TableMenuItem = {
 	text: string;
 	action?: () => void;
 	disabled?: boolean;
 	children?: TableMenuAction[];
+};
+
+export type TableMenuAction = TableMenuSeparator | TableMenuItem;
+
+export function isSeparator(action: TableMenuAction): action is TableMenuSeparator {
+	return 'separator' in action && action.separator === true;
 }
 
 export class TableMenu {
@@ -50,7 +58,7 @@ export class TableMenu {
 
 	private static renderActions(container: HTMLElement, actions: TableMenuAction[], close: () => void): void {
 		actions.forEach(item => {
-			if (item.text === '---') {
+			if (isSeparator(item)) {
 				// Add separator
 				container.createEl('div', {
 					cls: 'table-context-menu-separator',

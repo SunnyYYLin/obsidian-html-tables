@@ -1,26 +1,4 @@
-import { TableData, TableAlignment } from './types';
-
 export class TableStyler {
-	static getCellAlignment(row: number, col: number, table: TableData, defaultAlignment: TableAlignment): TableAlignment {
-		// Check for header cells
-		if ((row === 0 && table.hasHeaderRow) || (col === 0 && table.hasHeaderColumn)) {
-			return {
-				horizontal: 'center',
-				vertical: 'middle',
-			};
-		}
-
-		return defaultAlignment;
-	}
-
-	static applyCellAlignment(cellEl: HTMLElement, alignment: TableAlignment): void {
-		if (alignment.horizontal) {
-			cellEl.style.textAlign = alignment.horizontal;
-		}
-		if (alignment.vertical) {
-			cellEl.style.verticalAlign = alignment.vertical;
-		}
-	}
 
 	static setColumnWidth(tableEl: HTMLTableElement, colIndex: number, width: number): void {
 		const rows = tableEl.querySelectorAll('tr');

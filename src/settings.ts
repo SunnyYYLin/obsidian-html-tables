@@ -1,6 +1,5 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import MyPlugin from './main';
-import { TableConfig } from './types';
 import { getLocale, Locale } from './i18n';
 
 export interface BetterTablesSettings {
@@ -26,19 +25,6 @@ export const DEFAULT_SETTINGS: BetterTablesSettings = {
 	defaultHorizontalAlignment: 'left',
 	defaultVerticalAlignment: 'middle',
 };
-
-export function settingsToConfig(settings: BetterTablesSettings): TableConfig {
-	return {
-		enableMerging: settings.enableCellMerging,
-		enableFormula: settings.enableFormula,
-		enableNewline: settings.enableNewline,
-		enableCaption: settings.enableCaption,
-		defaultAlignment: {
-			horizontal: settings.defaultHorizontalAlignment,
-			vertical: settings.defaultVerticalAlignment,
-		},
-	};
-}
 
 export class BetterTablesSettingTab extends PluginSettingTab {
 	plugin: MyPlugin;

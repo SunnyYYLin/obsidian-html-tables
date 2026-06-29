@@ -35,7 +35,7 @@ export function parseMarkdownTable(content: string): TableData | null {
 	// Check for separator row
 	const separatorIndex = startIndex + 1;
 	const separatorLine = lines[separatorIndex];
-	if (lines.length > separatorIndex && separatorLine && isSeparatorRow(separatorLine)) {
+	if (lines.length > separatorIndex && separatorLine && isMarkdownSeparator(separatorLine)) {
 		hasHeaderRow = true;
 		// Check if separator indicates header column
 		if (separatorLine.includes(':')) {
@@ -73,16 +73,11 @@ function parseTableRow(line: string): string[] {
 	return cells;
 }
 
-function isSeparatorRow(line: string): boolean {
+export function isMarkdownSeparator(line: string): boolean {
 	const trimmed = line.trim();
-	if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
-		return false;
-	}
-
-	const content = trimmed.slice(1, -1);
-	const cells = content.split('|').map(cell => cell.trim());
-
-	return cells.every(cell => /^:?-+:?$/.test(cell));
+	if (!trimmed.startsWith('|')) return false;
+	const cells = trimmed.split('|').filter(c => c.trim() !== '');
+	return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c.trim()));
 }
 
 function parseCaptionLine(line: string): string | null {

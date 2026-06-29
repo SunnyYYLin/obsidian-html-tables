@@ -1,5 +1,6 @@
-import { App, MarkdownPostProcessorContext, TFile, MarkdownView, Editor } from 'obsidian';
+import { App, MarkdownPostProcessorContext, TFile, Editor } from 'obsidian';
 import { getTableCellText, isHtmlInSection } from './html-serializer';
+import { isMarkdownSeparator } from './parser';
 
 export interface TableSourceInfo {
 	lineStart: number;
@@ -271,11 +272,7 @@ function getSignatureMatchScore(sourceSignature: string[], tableSignature: strin
 	return score;
 }
 
-function isMarkdownSeparator(line: string): boolean {
-	if (!line.startsWith('|')) return false;
-	const cells = line.split('|').filter(c => c.trim() !== '');
-	return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c.trim()));
-}
+
 
 /**
  * Replace a table in the active file using the Editor API (for live preview).
@@ -372,74 +369,4 @@ export function isTableHtmlInEditor(
 	const range = findTableNearEditorSelection(editor) ?? findTableInSource(lines, tableEl);
 	if (!range) return false;
 	return range.kind === 'html' || isHtmlInSection(lines.slice(range.start, range.end + 1).join('\n'));
-}
-
-// --- Legacy vault-based functions (kept for reading mode) ---
-
-/**
- * Replace a table in the active file source via vault API (legacy, reading mode fallback).
- */
-export async function replaceTableInActiveFile(
-	app: App,
-	tableEl: HTMLTableElement,
-	newContent: string,
-): Promise<boolean> {
-	const view = app.workspace.getActiveViewOfType(MarkdownView);
-	if (!view) return false;
-
-	const file = view.file;
-	if (!file) return false;
-
-	const content = await app.vault.read(file);
-	const lines = content.split('\n');
-	const range = findTableInSource(lines, tableEl);
-	if (!range) return false;
-
-	const newLines = newContent.split('\n');
-	lines.splice(range.start, range.end - range.start + 1, ...newLines);
-
-	await app.vault.modify(file, lines.join('\n'));
-	return true;
-}
-
-/**
- * Check if a table in the active file is HTML source via vault API (legacy).
- */
-export async function isTableHtmlInActiveFile(
-	app: App,
-	tableEl: HTMLTableElement,
-): Promise<boolean> {
-	const view = app.workspace.getActiveViewOfType(MarkdownView);
-	if (!view) return false;
-
-	const file = view.file;
-	if (!file) return false;
-
-	const content = await app.vault.read(file);
-	const lines = content.split('\n');
-	const range = findTableInSource(lines, tableEl);
-	if (!range) return false;
-
-	return isHtmlInSection(lines[range.start]!);
-}
-
-/**
- * Read table source from the active file via vault API (legacy).
- */
-export async function readTableSourceFromActiveFile(
-	app: App,
-	tableEl: HTMLTableElement,
-): Promise<string | null> {
-	const view = app.workspace.getActiveViewOfType(MarkdownView);
-	if (!view) return null;
-
-	const file = view.file;
-	if (!file) return null;
-
-	const content = await app.vault.read(file);
-	const lines = content.split('\n');
-	const range = findTableInSource(lines, tableEl);
-	if (!range) return null;
-
-	return lines.slice(range.start, range.end + 1).join('\n');
 }
