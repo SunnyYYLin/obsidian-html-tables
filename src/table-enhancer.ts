@@ -630,12 +630,27 @@ export class TableEnhancer {
 	}
 
 	private getColumnIndexAtPoint(tableEl: HTMLTableElement, clientX: number): number {
-		const firstRow = tableEl.querySelector('tr');
-		const cells = Array.from(firstRow?.querySelectorAll<HTMLElement>('td, th') ?? []);
-		return cells.findIndex(cell => {
-			const rect = cell.getBoundingClientRect();
-			return clientX >= rect.left && clientX <= rect.right;
-		});
+		const gridInfo = SelectionManager.getTableGrid(tableEl);
+		const { matrix, cellCoords } = gridInfo;
+		const colCount = matrix[0]?.length || 0;
+
+		for (let c = 0; c < colCount; c++) {
+			for (let r = 0; r < matrix.length; r++) {
+				const cell = matrix[r]?.[c];
+				if (cell) {
+					const coords = cellCoords.get(cell)!;
+					const rect = cell.getBoundingClientRect();
+					const colWidth = rect.width / (coords.colEnd - coords.colStart + 1);
+					const colLeft = rect.left + colWidth * (c - coords.colStart);
+					const colRight = colLeft + colWidth;
+					if (clientX >= colLeft && clientX <= colRight) {
+						return c;
+					}
+					break;
+				}
+			}
+		}
+		return -1;
 	}
 
 	private getTableEdgeHit(tableEl: HTMLTableElement, e: MouseEvent): 'top' | 'left' | null {

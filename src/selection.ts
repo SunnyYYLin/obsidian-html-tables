@@ -6,6 +6,64 @@
 const selectedMap = new WeakMap<HTMLTableElement, HTMLElement[]>();
 const lastSelectedMap = new WeakMap<HTMLTableElement, HTMLElement>();
 
+// --- Virtual Grid Matrix Builder for spanning support ---
+
+interface CellCoordinate {
+	rowStart: number;
+	colStart: number;
+	rowEnd: number;
+	colEnd: number;
+}
+
+interface TableGridInfo {
+	matrix: Array<Array<HTMLElement | null>>;
+	cellCoords: Map<HTMLElement, CellCoordinate>;
+}
+
+function buildTableGrid(tableEl: HTMLTableElement): TableGridInfo {
+	const rows = Array.from(tableEl.querySelectorAll('tr'));
+	const matrix: Array<Array<HTMLElement | null>> = [];
+	const cellCoords = new Map<HTMLElement, CellCoordinate>();
+
+	rows.forEach((row, r) => {
+		if (!matrix[r]) matrix[r] = [];
+		const cells = Array.from(row.querySelectorAll(':scope > td, :scope > th'));
+		let c = 0;
+
+		cells.forEach((cellEl) => {
+			const htmlCell = cellEl as HTMLTableCellElement;
+			if (htmlCell.hasClass('merged-cell-hidden')) return;
+
+			const rowspan = parseInt(htmlCell.getAttribute('rowspan') || '1', 10);
+			const colspan = parseInt(htmlCell.getAttribute('colspan') || '1', 10);
+
+			while (matrix[r]![c] !== undefined) {
+				c++;
+			}
+
+			const coords = {
+				rowStart: r,
+				colStart: c,
+				rowEnd: r + rowspan - 1,
+				colEnd: c + colspan - 1,
+			};
+			cellCoords.set(htmlCell, coords);
+
+			for (let dr = 0; dr < rowspan; dr++) {
+				const nr = r + dr;
+				if (!matrix[nr]) matrix[nr] = [];
+				for (let dc = 0; dc < colspan; dc++) {
+					const nc = c + dc;
+					matrix[nr][nc] = htmlCell;
+				}
+			}
+			c += colspan;
+		});
+	});
+
+	return { matrix, cellCoords };
+}
+
 // --- Cell position utility ---
 
 /**
@@ -13,20 +71,12 @@ const lastSelectedMap = new WeakMap<HTMLTableElement, HTMLElement>();
  * Returns null if the cell is not inside a table.
  */
 export function getCellPosition(cellEl: HTMLElement): { row: number; col: number } | null {
-	const row = cellEl.closest('tr');
-	if (!row) return null;
 	const table = cellEl.closest<HTMLTableElement>('table');
 	if (!table) return null;
-
-	const rows = Array.from(table.querySelectorAll('tr'));
-	const rowIndex = rows.indexOf(row);
-	if (rowIndex < 0) return null;
-
-	const cells = Array.from(row.querySelectorAll('td, th'));
-	const colIndex = cells.indexOf(cellEl);
-	if (colIndex < 0) return null;
-
-	return { row: rowIndex, col: colIndex };
+	const gridInfo = buildTableGrid(table);
+	const coords = gridInfo.cellCoords.get(cellEl);
+	if (!coords) return null;
+	return { row: coords.rowStart, col: coords.colStart };
 }
 
 // --- SelectionManager ---
@@ -42,6 +92,10 @@ export const SelectionManager = {
 
 	setLastSelected(tableEl: HTMLTableElement, cell: HTMLElement): void {
 		lastSelectedMap.set(tableEl, cell);
+	},
+
+	getTableGrid(tableEl: HTMLTableElement): TableGridInfo {
+		return buildTableGrid(tableEl);
 	},
 
 	select(tableEl: HTMLTableElement, cellEl: HTMLElement): void {
@@ -76,54 +130,144 @@ export const SelectionManager = {
 
 	selectRange(tableEl: HTMLTableElement, start: HTMLElement, end: HTMLElement): void {
 		this.clearTable(tableEl);
-		const startPos = getCellPosition(start);
-		const endPos = getCellPosition(end);
-		if (!startPos || !endPos) return;
+		const gridInfo = this.getTableGrid(tableEl);
+		const { matrix, cellCoords } = gridInfo;
 
-		const minRow = Math.min(startPos.row, endPos.row);
-		const maxRow = Math.max(startPos.row, endPos.row);
-		const minCol = Math.min(startPos.col, endPos.col);
-		const maxCol = Math.max(startPos.col, endPos.col);
+		const coordsStart = cellCoords.get(start);
+		const coordsEnd = cellCoords.get(end);
+		if (!coordsStart || !coordsEnd) return;
 
-		const rows = Array.from(tableEl.querySelectorAll('tr'));
-		for (let r = minRow; r <= maxRow; r++) {
-			const row = rows[r];
-			if (!row) continue;
-			const cells = Array.from(row.querySelectorAll<HTMLElement>('td, th'));
-			for (let c = minCol; c <= maxCol; c++) {
-				const cell = cells[c];
-				if (cell) this.select(tableEl, cell);
+		let minRow = Math.min(coordsStart.rowStart, coordsEnd.rowStart);
+		let maxRow = Math.max(coordsStart.rowEnd, coordsEnd.rowEnd);
+		let minCol = Math.min(coordsStart.colStart, coordsEnd.colStart);
+		let maxCol = Math.max(coordsStart.colEnd, coordsEnd.colEnd);
+
+		let expanded = true;
+		while (expanded) {
+			expanded = false;
+			for (let r = minRow; r <= maxRow; r++) {
+				for (let c = minCol; c <= maxCol; c++) {
+					const cell = matrix[r]?.[c];
+					if (cell) {
+						const coords = cellCoords.get(cell)!;
+						if (coords.rowStart < minRow) {
+							minRow = coords.rowStart;
+							expanded = true;
+						}
+						if (coords.rowEnd > maxRow) {
+							maxRow = coords.rowEnd;
+							expanded = true;
+						}
+						if (coords.colStart < minCol) {
+							minCol = coords.colStart;
+							expanded = true;
+						}
+						if (coords.colEnd > maxCol) {
+							maxCol = coords.colEnd;
+							expanded = true;
+						}
+					}
+				}
 			}
 		}
+
+		const cellsToSelect = new Set<HTMLElement>();
+		for (let r = minRow; r <= maxRow; r++) {
+			for (let c = minCol; c <= maxCol; c++) {
+				const cell = matrix[r]?.[c];
+				if (cell) {
+					cellsToSelect.add(cell);
+				}
+			}
+		}
+
+		cellsToSelect.forEach(cell => this.select(tableEl, cell));
 	},
 
 	selectRowRange(tableEl: HTMLTableElement, startIndex: number, endIndex: number): void {
 		this.clearTable(tableEl);
-		const minRow = Math.min(startIndex, endIndex);
-		const maxRow = Math.max(startIndex, endIndex);
-		const rows = Array.from(tableEl.querySelectorAll('tr'));
-		for (let r = minRow; r <= maxRow; r++) {
-			const row = rows[r];
-			if (!row) continue;
-			const cells = Array.from(row.querySelectorAll<HTMLElement>('td, th'));
-			for (const cell of cells) {
-				this.select(tableEl, cell);
+		const gridInfo = this.getTableGrid(tableEl);
+		const { matrix, cellCoords } = gridInfo;
+
+		let minRow = Math.min(startIndex, endIndex);
+		let maxRow = Math.max(startIndex, endIndex);
+		let minCol = 0;
+		let maxCol = (matrix[0]?.length || 1) - 1;
+
+		let expanded = true;
+		while (expanded) {
+			expanded = false;
+			for (let r = minRow; r <= maxRow; r++) {
+				for (let c = minCol; c <= maxCol; c++) {
+					const cell = matrix[r]?.[c];
+					if (cell) {
+						const coords = cellCoords.get(cell)!;
+						if (coords.rowStart < minRow) {
+							minRow = coords.rowStart;
+							expanded = true;
+						}
+						if (coords.rowEnd > maxRow) {
+							maxRow = coords.rowEnd;
+							expanded = true;
+						}
+					}
+				}
 			}
 		}
+
+		const cellsToSelect = new Set<HTMLElement>();
+		for (let r = minRow; r <= maxRow; r++) {
+			for (let c = minCol; c <= maxCol; c++) {
+				const cell = matrix[r]?.[c];
+				if (cell) {
+					cellsToSelect.add(cell);
+				}
+			}
+		}
+		cellsToSelect.forEach(cell => this.select(tableEl, cell));
 	},
 
 	selectColumnRange(tableEl: HTMLTableElement, startIndex: number, endIndex: number): void {
 		this.clearTable(tableEl);
-		const minCol = Math.min(startIndex, endIndex);
-		const maxCol = Math.max(startIndex, endIndex);
-		const rows = Array.from(tableEl.querySelectorAll('tr'));
-		for (const row of rows) {
-			const cells = Array.from(row.querySelectorAll<HTMLElement>('td, th'));
-			for (let c = minCol; c <= maxCol; c++) {
-				const cell = cells[c];
-				if (cell) this.select(tableEl, cell);
+		const gridInfo = this.getTableGrid(tableEl);
+		const { matrix, cellCoords } = gridInfo;
+
+		let minRow = 0;
+		let maxRow = matrix.length - 1;
+		let minCol = Math.min(startIndex, endIndex);
+		let maxCol = Math.max(startIndex, endIndex);
+
+		let expanded = true;
+		while (expanded) {
+			expanded = false;
+			for (let r = minRow; r <= maxRow; r++) {
+				for (let c = minCol; c <= maxCol; c++) {
+					const cell = matrix[r]?.[c];
+					if (cell) {
+						const coords = cellCoords.get(cell)!;
+						if (coords.colStart < minCol) {
+							minCol = coords.colStart;
+							expanded = true;
+						}
+						if (coords.colEnd > maxCol) {
+							maxCol = coords.colEnd;
+							expanded = true;
+						}
+					}
+				}
 			}
 		}
+
+		const cellsToSelect = new Set<HTMLElement>();
+		for (let r = minRow; r <= maxRow; r++) {
+			for (let c = minCol; c <= maxCol; c++) {
+				const cell = matrix[r]?.[c];
+				if (cell) {
+					cellsToSelect.add(cell);
+				}
+			}
+		}
+		cellsToSelect.forEach(cell => this.select(tableEl, cell));
 	},
 
 	/**
