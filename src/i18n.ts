@@ -55,6 +55,7 @@ export interface Locale {
 	top: string;
 	middle: string;
 	bottom: string;
+	tableOptions: string;
 }
 
 export const locales: Record<string, Locale> = {
@@ -113,6 +114,7 @@ export const locales: Record<string, Locale> = {
 		top: 'Top',
 		middle: 'Middle',
 		bottom: 'Bottom',
+		tableOptions: 'Table options',
 	},
 	zh: {
 		mergeCells: '合并单元格',
@@ -169,6 +171,7 @@ export const locales: Record<string, Locale> = {
 		top: '顶部',
 		middle: '垂直居中',
 		bottom: '底部',
+		tableOptions: '表格操作',
 	},
 };
 

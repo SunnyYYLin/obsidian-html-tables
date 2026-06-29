@@ -267,11 +267,11 @@ export class TableEnhancer {
 			cls: 'better-table-convert-button mod-hidden',
 			attr: {
 				type: 'button',
-				'aria-label': 'Convert table between Markdown and HTML',
-				title: 'Convert table between Markdown and HTML',
+				'aria-label': this.host.t.tableOptions,
+				title: this.host.t.tableOptions,
 			},
 		});
-		setIcon(button, 'repeat-2');
+		setIcon(button, 'table');
 
 		let isHovering = false;
 		let hideTimer: number | null = null;
@@ -328,7 +328,7 @@ export class TableEnhancer {
 		button.addEventListener('click', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
-			this.convertTableFromButton(tableEl);
+			TableMenu.show(tableEl, e, this.getTableOptionsActions(tableEl));
 		});
 
 		this.host.register(() => {
@@ -344,8 +344,73 @@ export class TableEnhancer {
 		});
 	}
 
-	private convertTableFromButton(tableEl: HTMLTableElement): void {
-		this.convertTableFormat(tableEl);
+	private getTableOptionsActions(tableEl: HTMLTableElement): TableMenuAction[] {
+		const actions: TableMenuAction[] = [];
+		const t = this.host.t;
+
+		// 1. Convert format option
+		const context = this.tableContexts.get(tableEl);
+		let isHtml = false;
+		if (context) {
+			isHtml = isTableFromHtmlSource(context, tableEl);
+		} else {
+			const view = this.host.app.workspace.getActiveViewOfType(MarkdownView);
+			const editor = view?.editor;
+			if (editor) {
+				isHtml = isTableHtmlInEditor(editor, tableEl);
+			}
+		}
+
+		actions.push({
+			text: isHtml ? t.convertToMarkdown : t.convertToHtml,
+			action: () => this.convertTableFormat(tableEl),
+		});
+
+		actions.push({ separator: true });
+
+		// 2. Table header toggles (editor-aware)
+		const view = this.host.app.workspace.getActiveViewOfType(MarkdownView);
+		const editor = view?.editor ?? undefined;
+
+		actions.push(
+			{ text: t.toggleHeaderRow, action: () => this.toggleHeaderRow(tableEl, editor) },
+			{ text: t.toggleHeaderColumn, action: () => this.toggleHeaderColumn(tableEl, editor) },
+		);
+
+		// 3. Caption support
+		const hasCaption = tableEl.querySelector('caption') !== null;
+		if (!hasCaption) {
+			actions.push({
+				text: t.addCaption,
+				action: () => this.addCaption(tableEl, editor),
+			});
+		}
+
+		// 4. Column width styling
+		actions.push(
+			{ separator: true },
+			{
+				text: t.columnWidth,
+				children: [
+					{
+						text: t.autoFitColumns,
+						action: () => {
+							TableStyler.autoFitColumns(tableEl);
+							this.persistTableChanges(tableEl, editor);
+						},
+					},
+					{
+						text: t.equalColumnWidth,
+						action: () => {
+							TableStyler.equalizeColumns(tableEl);
+							this.persistTableChanges(tableEl, editor);
+						},
+					},
+				],
+			},
+		);
+
+		return actions;
 	}
 
 	private suppressHtmlEmbedSourceEdit(tableEl: HTMLTableElement): void {
