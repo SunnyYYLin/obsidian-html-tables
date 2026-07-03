@@ -1,5 +1,5 @@
 {
-	"name": "better-tables",
+	"name": "html-tables",
 	"version": "0.0.2",
 	"description": "Enhanced table support for Obsidian with advanced features like table headers, cell merging, and more.",
 	"main": "main.js",

@@ -17,7 +17,7 @@ Enhanced table support for Obsidian with advanced features like table headers, c
 ## Installation
 
 1. Download the latest release from GitHub
-2. Copy `main.js`, `manifest.json`, and `styles.css` to your vault: `VaultFolder/.obsidian/plugins/better-tables/`
+2. Copy `main.js`, `manifest.json`, and `styles.css` to your vault: `VaultFolder/.obsidian/plugins/html-tables/`
 3. Enable the plugin in Settings → Community plugins
 
 ## Usage
