@@ -1,4 +1,4 @@
-# Better Tables
+# HTML Tables
 
 Enhanced table support for Obsidian with advanced features like table headers, cell merging, and more.
 

@@ -1,6 +1,6 @@
 {
 	"id": "html-tables",
-	"name": "Better Tables",
+	"name": "HTML Tables",
 	"version": "0.0.2",
 	"minAppVersion": "1.8.7",
 	"description": "Enhance Markdown tables with headers, cell merging, column resizing, formulas, and captions.",
