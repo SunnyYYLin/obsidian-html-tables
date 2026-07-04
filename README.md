@@ -2,6 +2,8 @@
 
 Enhanced table support for Obsidian with advanced features like table headers, cell merging, and more.
 
+![Demo](imgs/demo.gif)
+
 ## Features
 
 - **Table Headers**: Support for header rows and header columns
