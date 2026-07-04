@@ -37,30 +37,33 @@ The plugin automatically enhances tables in preview mode. Simply create a standa
 
 ### Table Captions
 
-Add a caption by placing a paragraph starting with "Table:" before your table:
+Add a caption by placing bracket text in a paragraph before your table:
 
 ```markdown
-Table: My Table Caption
+[My Table Caption]
 
 | Header 1 | Header 2 |
 |----------|----------|
 | Cell 1   | Cell 2   |
 ```
 
-### Commands
+### Floating Button
 
-- **Toggle header row**: Toggle the first row as a header
-- **Toggle header column**: Toggle the first column as a header
-- **Add table caption**: Add a caption to the current table
+Hover over any table to reveal a floating action button. Click it to access:
+
+- Convert between Markdown and HTML format
+- Toggle Header Row
+- Toggle Header Column
+- Add Caption
+- Auto-fit / Equalize Column Width
 
 ### Context Menu
 
 Right-click on any table to access:
-- Toggle Header Row
-- Toggle Header Column
-- Add Caption
-- Auto-fit Columns
-- Equal Column Width
+- Merge Cells
+- Unmerge Cells
+- Auto-fit / Equalize Column Width
+- Horizontal / Vertical Alignment
 
 ### Column Resizing
 
@@ -103,7 +106,7 @@ Use `\n` for newlines within cells:
 ### Complete Example
 
 ```markdown
-Table: Quarterly Sales Report
+[Quarterly Sales Report]
 
 | Product | Q1 | Q2 | Q3 | Q4 | Total |
 |---------|----|----|----|----|-------|
