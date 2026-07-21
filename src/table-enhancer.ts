@@ -50,6 +50,7 @@ import {
 	installFloatingConversionButton,
 	suppressHtmlEmbedSourceEdit,
 	installTableMenuDismissHandler,
+	isInNoteEditorArea,
 } from './conversion-button';
 
 import {
@@ -157,6 +158,9 @@ export class TableEnhancer {
 	processTables(element: HTMLElement, context: MarkdownPostProcessorContext): void {
 		if (!this.host.settings.enableAdvancedTables) return;
 		element.querySelectorAll('table').forEach(table => {
+			// Skip tables outside the main note editor area (e.g. Claudian sidebar,
+			// search panels, or any third-party plugin that uses MarkdownRenderer.render).
+			if (!isInNoteEditorArea(table)) return;
 			this.enhanceTable(table, context);
 		});
 	}
@@ -252,6 +256,8 @@ export class TableEnhancer {
 
 	private enhanceTableLivePreview(tableEl: HTMLTableElement): void {
 		if (this.enhancedTables.has(tableEl)) return;
+		// Guard: only enhance tables in the main note editor area.
+		if (!isInNoteEditorArea(tableEl)) return;
 		this.enhancedTables.add(tableEl);
 		tableEl.addClass('better-table');
 		this.cellEditor.enhanceRenderedContent(tableEl);
@@ -264,6 +270,8 @@ export class TableEnhancer {
 
 	private enhanceTable(tableEl: HTMLTableElement, context: MarkdownPostProcessorContext): void {
 		if (this.enhancedTables.has(tableEl)) return;
+		// Guard: only enhance tables in the main note editor area.
+		if (!isInNoteEditorArea(tableEl)) return;
 		this.tableContexts.set(tableEl, context);
 		this.enhancedTables.add(tableEl);
 
