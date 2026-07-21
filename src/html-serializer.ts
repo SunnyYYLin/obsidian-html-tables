@@ -125,7 +125,12 @@ export function tableDataToHtml(table: TableData): string {
 			const isHeader = (table.hasHeaderRow && rowIndex === 0) || (table.hasHeaderColumn && colIndex === 0);
 			const cellEl = tr.createEl(isHeader ? 'th' : 'td');
 			const trimmedCell = cell.trim();
-			if (trimmedCell) cellEl.textContent = trimmedCell;
+			if (trimmedCell) {
+				cellEl.textContent = trimmedCell;
+				// Preserve original text so the plugin can re-render formulas / Markdown
+				// even after Obsidian has already parsed the cell (e.g. via KaTeX).
+				cellEl.setAttribute('data-better-raw', trimmedCell);
+			}
 		});
 	});
 
@@ -154,6 +159,11 @@ function copyCellAttributes(source: HTMLTableCellElement, target: HTMLElement): 
 	const colspan = source.getAttribute('colspan');
 	if (rowspan && rowspan !== '1') target.setAttribute('rowspan', rowspan);
 	if (colspan && colspan !== '1') target.setAttribute('colspan', colspan);
+
+	// Preserve the raw source text so the plugin can re-render formulas/Markdown
+	// correctly the next time the table is loaded.
+	const raw = source.getAttribute('data-better-raw');
+	if (raw) target.setAttribute('data-better-raw', raw);
 
 	const textAlign = source.style.textAlign || source.getAttribute('align') || '';
 	const verticalAlign = source.style.verticalAlign || '';

@@ -44,10 +44,25 @@ export function installConversionButtons(
 	const fresh: HTMLTableElement[] = [];
 	tables.forEach((tableEl) => {
 		if (wasInstalled.has(tableEl)) return;
+		// Only process tables inside the main note editor area.
+		// This prevents affecting tables in sidebars or third-party plugin panels
+		// (e.g. Claudian chat, search results, etc.).
+		if (!isInNoteEditorArea(tableEl)) return;
 		wasInstalled.add(tableEl);
 		fresh.push(tableEl);
 	});
 	return fresh;
+}
+
+/**
+ * Returns true if the table element is inside the main note editor / reading
+ * view area, i.e. within `.workspace-split.mod-vertical.mod-root`.
+ * Tables that live in sidebars, modals, or third-party plugin panels are excluded.
+ */
+export function isInNoteEditorArea(el: HTMLElement): boolean {
+	return !!el.closest(
+		'.workspace-split.mod-vertical.mod-root, .markdown-preview-view, .cm-content',
+	);
 }
 
 // ----

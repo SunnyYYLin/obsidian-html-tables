@@ -141,6 +141,7 @@ export class CellEditor {
 	renderCellPreview(tableEl: HTMLTableElement, cellEl: HTMLElement): void {
 		if (cellEl.hasClass('better-table-cell-editing')) return;
 
+		const hasRawAttr = cellEl.hasAttribute('data-better-raw');
 		const raw = (cellEl.getAttribute('data-better-raw') ?? cellEl.textContent ?? '').trim();
 		// Preserve resize handles that are children of the cell
 		const preserved = Array.from(cellEl.children).filter(c =>
@@ -151,6 +152,10 @@ export class CellEditor {
 		cellEl.removeClass('formula-result', 'formula-error', 'formula-cell');
 
 		if (!raw) {
+			// If there is no data-better-raw attribute and textContent is empty, the cell
+			// was likely rendered by an external system (e.g. KaTeX/MathJax by Obsidian).
+			// Do NOT clear it — doing so would erase the rendered math/content.
+			if (!hasRawAttr) return;
 			cellEl.removeAttribute('data-better-raw');
 			cellEl.empty();
 			preserved.forEach(c => cellEl.appendChild(c));

@@ -20,6 +20,11 @@ export function addCellSelectionHandlers(
 			if ((mouseEvent.target as HTMLElement).closest('.column-resize-handle')) return;
 
 			const cellEl = cell as HTMLElement;
+
+			// If the cell is currently being edited (contenteditable), allow default
+			// browser behaviour so mouse clicks can position the text cursor inside it.
+			if (cellEl.hasClass('better-table-cell-editing')) return;
+
 			e.preventDefault();
 
 			const lastSelected = SelectionManager.getLastSelected(tableEl);
